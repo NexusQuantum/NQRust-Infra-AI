@@ -14,7 +14,16 @@ and add: secure SSH, conversational config, artifact provisioning, verification,
 
 You use two built-in tools: **`ssh`** (transport) and **`pty`** (tmux screen-driver). The
 helper scripts referenced below live in this skill's `scripts/` directory — read them with
-`file_read` and upload them with `ssh` `push`.
+`file_read` and upload them with `ssh` `push`. (If the operator says the helper scripts are
+already on the target, just run them with `ssh exec` instead of pushing.)
+
+## Autonomous operation (critical)
+
+Run the WHOLE installation to completion in ONE session. You already have every setting — do NOT
+pause, ask for confirmation, or end your turn until the install is verified complete or has
+definitively failed. If you get stuck on a screen, re-read it (`pty wait {stable:true}` → `pty
+screen`) and retry the key — never stop mid-drive. Narrate briefly, but ALWAYS immediately follow
+with the next tool call.
 
 ## Tool contracts (use exactly these)
 
@@ -31,9 +40,13 @@ helper scripts referenced below live in this skill's `scripts/` directory — re
 - `wait`: `{action:"wait", session, until:"<regex>"?, stable:true?, timeout_ms=15000}` → settled screen.
 - `stop`: `{action:"stop", session}`.
 
-**Golden rule for the TUI: never send keys to a moving screen.** Before every keystroke do
-`pty wait {until: "<anchor text of the screen you expect>"}` (or `{stable:true}`), then
-`pty screen` to confirm which screen you're on, then `pty send`.
+**Golden rule for the TUI: never send keys to a moving screen, and send ONE key at a time.**
+For every keystroke loop: `pty send` ONE key → `pty wait {session, stable:true, timeout_ms:4000}`
+→ `pty screen` → CONFIRM the highlighted item/field actually changed before the next key. The TUI
+redraws with a delay over SSH; if you read immediately you see the previous frame and wrongly think
+the key didn't register. If the highlight did NOT move, `pty wait {stable:true}` again and re-read —
+do NOT spam more keys (you'll overshoot). In field lists (Configuration screen) move down one row at
+a time and re-read the focused field name each time.
 
 ## Procedure
 
