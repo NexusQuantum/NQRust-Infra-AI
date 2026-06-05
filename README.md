@@ -25,7 +25,7 @@ nqrust-install "on 10.0.0.5, ssh user ubuntu, key ~/.ssh/id_ed25519, production,
 ## Install
 
 ```bash
-git clone <this-repo> nqrust-microvm-agent
+git clone https://github.com/NexusQuantum/nqrust-microvm-agent
 cd nqrust-microvm-agent
 ./install.sh            # deploys the skill, verifies the tools, links the wrapper
 ```
