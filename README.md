@@ -1,8 +1,10 @@
 # nqrust-microvm-agent
 
 An AI agent that **installs [NQRust-MicroVM](https://github.com/NexusQuantum/NQRust-MicroVM)
-on a remote Linux host from a single prompt** — it SSHes in, runs preflight, gathers the config
-conversationally, drives the real `nqr-installer` TUI over tmux, verifies, and reports.
+on a remote Linux host from a single prompt** — it SSHes in, **detects the host's specs +
+network and recommends a configuration** (grounded in the official docs at
+[microvm.nexusquantum.id](https://microvm.nexusquantum.id)), then drives the real
+`nqr-installer` TUI over tmux, verifies, and reports.
 
 Powered by [RantaiClaw](https://github.com/RantAI-dev/RantAIClaw). This repo ships **only the
 skill** (a playbook + helper scripts); the SSH/tmux capability lives in RantaiClaw itself as the
@@ -84,7 +86,7 @@ nqrust-install "on <that-ip>, ssh user ubuntu password ..."
 
 ```
 skill/nqrust-microvm/SKILL.md      # the agent playbook (screen-map of the installer TUI)
-skill/nqrust-microvm/scripts/      # preflight / resolve-artifact / verify / smoke-test
+skill/nqrust-microvm/scripts/      # discover (specs+network) / preflight / resolve-artifact / verify / smoke-test
 skill/nqrust-microvm/RUNBOOK.md    # detailed runbook + troubleshooting
 install.sh                         # deploy into your RantaiClaw
 bin/nqrust-install                 # thin convenience wrapper

@@ -1,7 +1,7 @@
 ---
 name: nqrust-microvm
-description: Install & configure NQRust-MicroVM on a remote Linux host by driving the nqr-installer TUI over tmux via SSH, gathering config conversationally.
-version: 0.1.0
+description: Install & configure NQRust-MicroVM on a remote Linux host by driving the nqr-installer TUI over tmux via SSH. On first run it detects the host's specs + network and recommends a configuration, grounded in the official docs (microvm.nexusquantum.id).
+version: 0.2.0
 tags: [installer, microvm, firecracker, tmux, ssh, infra]
 ---
 
@@ -54,23 +54,59 @@ a time and re-read the focused field name each time.
 From the user's prompt extract host/IP, username, and credential (password OR key path/content).
 If anything is missing, ASK. Then `ssh connect`. Never echo or log the password/passphrase.
 
-### 2. Preflight (idempotency + readiness)
-- `ssh push` `scripts/preflight.sh` → `/tmp/nqr-preflight.sh`; `ssh exec "bash /tmp/nqr-preflight.sh"`.
-- Parse the `=== PREFLIGHT SUMMARY ===` block.
-  - `RESULT=fail` → STOP and report which check failed (arch≠x86_64, no KVM, wrong OS, no tmux).
-  - `PRIOR_INSTALL=present` → ask the operator: **skip / repair / upgrade / uninstall+reinstall**. Do not blindly re-run.
+### 2. Discover the host (specs + network) — do this on FIRST contact
+- `ssh push` `scripts/discover.sh` → `/tmp/nqr-discover.sh`; `ssh exec "bash /tmp/nqr-discover.sh"`.
+- Parse the `=== DISCOVERY ===` KEY=VALUE block.
+  - **`BLOCKERS` non-empty** → STOP and report it (e.g. `arch=…`, `no-kvm`, `no-virt-flags`, `disk<20G`, `unsupported-os`). Per the [system requirements](https://microvm.nexusquantum.id) the host can't run NQRust-MicroVM.
+  - **`PRIOR_INSTALL=present`** → ask the operator: skip / repair / upgrade / uninstall+reinstall. Don't blindly re-run.
+  - **`TMUX=missing`** → `ssh exec "sudo apt-get update && sudo apt-get install -y tmux"` (you need it for the drive).
   - Remember `GITHUB_REACHABLE` for step 4.
 
-### 3. Gather config conversationally
-Ask only the high-impact choices; state the default and a one-line tradeoff. Map answers to the
-TUI fields in step 5. Defaults in (parens):
-- **Install mode** (Production) — Production = Manager+Agent+UI on this host.
-- **Network mode** (NAT) — NAT = isolated VMs behind the host. Bridged = VMs on the LAN (needs an uplink interface, **may require a reboot**). Isolated = VMs talk only to each other.
-- **Database** (local) — local = installer provisions PostgreSQL here; or give a remote host/port.
-- **Web UI** (yes), **Container runtime** Docker-in-VM (yes, ~2.2GB download), **Install Docker on host** (yes).
-- Paths default to `/opt/nqrust-microvm`, `/srv/fc`, `/etc/nqrust-microvm` — only ask if they want custom.
+### 3. Recommend a configuration, then confirm
+Don't ask cold — turn the discovery into a **recommendation**, then let the operator adjust.
+Show the operator TWO short tables:
 
-Print a summary table of the final settings and get an explicit **"proceed?"** before step 5.
+**(a) Discovery** — what you found: `OS` · `CPU_CORES`/`CPU_MODEL` · `VIRT`/`KVM` · `RAM_GB` · `DISK_FREE_GB`/`DISK_TOTAL_GB` · `PRIMARY_NIC` + `PRIMARY_IP` + `GATEWAY` · `NIC_COUNT` · `VIRTUALIZED` · `PORTS_BUSY` · `GITHUB_REACHABLE`.
+
+**(b) Recommended configuration** — derive each setting from the discovery using the
+**Recommendation rules** below (which encode the official docs). For every setting give the
+**recommendation + a one-line "why"**. Then print the final settings and get an explicit
+**"proceed, or change X?"** before driving the installer.
+
+If the operator's original prompt already pinned some settings, honor those and only
+recommend the rest.
+
+## Recommendation rules (from the official docs — https://microvm.nexusquantum.id)
+
+Map the `DISCOVERY` values to each installer setting. Always surface the recommendation + the
+reason, and let the operator override. (Docs: min = x86_64+KVM, 4 GB RAM, 20 GB disk,
+Ubuntu 22.04/24.04 or Debian 11; recommended = 8 GB+ RAM, 50 GB+ disk, Ubuntu 24.04.)
+
+- **Install mode** — multi-host? joining an existing manager → **Agent Only**; this host is the
+  control plane for workers → **Manager Only**. Single host (default): **Production**
+  (Manager+Agent+UI) when it meets the *recommended* bar (`RAM_GB ≥ 8` and `DISK_FREE_GB ≥ 50`);
+  if it only meets the *minimum* (`RAM_GB ≥ 4`, `DISK_FREE_GB 20–50`), recommend **Minimal**
+  (no UI) to stay light. Never recommend Development (that's build-from-source).
+- **Network mode** — the installer offers **NAT / Bridged / Isolated** (VXLAN overlay is set up
+  later in the UI for multi-host):
+  - **NAT — default recommendation.** Private subnet, VMs get DHCP + internet via host NAT, and
+    it does NOT touch the host uplink → **safe, won't drop your SSH**. Best when
+    `VIRTUALIZED≠none`, `PRIMARY_IP_PRIVATE=yes`, or `NIC_COUNT=1`.
+  - **Bridged** — only if the operator wants VMs to have **real LAN IPs**. Needs a physical
+    uplink (`PRIMARY_NIC`). ⚠️ It re-bridges that NIC; if you're connected through it
+    (`NIC_COUNT=1`) the install can **drop your SSH** and may need a reboot. Recommend only when
+    `NIC_COUNT ≥ 2` or there's out-of-band access; otherwise warn and keep NAT.
+  - **Isolated** — air-gapped / no-egress hosts; VMs reach only each other.
+- **Disk** (`DISK_FREE_GB`) — `<20` → **blocked** (installer pre-flight fails). `20–35` → OK but
+  tight (base images are ~8 GB) → lean toward Minimal + Container-Runtime=No. `≥50` → ideal.
+- **Container runtime / Docker** (Docker-in-VM + ~2.2 GB container-runtime image + bun/python
+  function runtimes) — recommend **Yes** when `DISK_FREE_GB ≥ ~40` and the operator wants
+  containers/functions; **No** for a lean install or tight disk (saves ~5 GB of downloads).
+- **Database** — **local PostgreSQL** (documented default; the installer provisions it).
+- **Paths** — keep defaults: `/opt/nqrust-microvm` (bin+ui), `/srv/fc/vms`, `/srv/images`,
+  `/etc/nqrust-microvm` (manager.env/agent.env/ui.env), `/var/log/nqrust-microvm`.
+- **After install** — report the documented access URLs: Manager API `:18080`, Web UI `:3000`
+  (Production), Agent `:9090`; default login `root`/`root` → tell the operator to change it.
 
 ### 4. Provision the installer artifact
 - `ssh push` `scripts/resolve-artifact.sh` → run `ssh exec "bash /tmp/nqr-resolve.sh /tmp/nqr-installer"`.

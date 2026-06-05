@@ -115,7 +115,7 @@ prompts) — **only on a trusted/throwaway target**, and revert afterward.
 
 | Stage | Notes |
 |---|---|
-| Connect + preflight | ssh password/key auth; checks arch/OS/`/dev/kvm`/disk/tmux |
+| Connect + **discovery** | ssh password/key auth; then it **detects specs + network** (CPU/RAM/disk/KVM, NICs/IP/gateway, virtualized?, ports, prior install) and **recommends a config** — install mode, NAT-vs-Bridged, Docker/runtime — grounded in the [docs](https://microvm.nexusquantum.id), and shows you the reasoning before proceeding |
 | Welcome → **Mode** | **Minimal** (manager+agent) or Production (adds the Web UI) |
 | **Network** | choose **NAT** — **not Bridged**. Bridged re-bridges the host's NIC and can **drop your SSH** mid-install |
 | Configuration | path/DB defaults are fine; toggle Docker / Container-Runtime to *No* for a lighter, faster install |
