@@ -8,6 +8,11 @@ Powered by [RantaiClaw](https://github.com/RantAI-dev/RantAIClaw). This repo shi
 skill** (a playbook + helper scripts); the SSH/tmux capability lives in RantaiClaw itself as the
 general-purpose `ssh` and `pty` tools (the `remote-install` feature).
 
+> **New here? Start with the hands-on [TUTORIAL.md](TUTORIAL.md)** — step-by-step from a
+> blank machine to a verified install, including a throwaway test target and the gotchas
+> we hit validating it end-to-end (the 20 GB disk requirement, NAT-not-Bridged, provider
+> quirks, and how to drive a long install to completion).
+
 ```
 nqrust-install "on 10.0.0.5, ssh user ubuntu, key ~/.ssh/id_ed25519, production, NAT, with web UI"
 ```
