@@ -27,7 +27,8 @@ nqrust-install "on 10.0.0.5, ssh user ubuntu, key ~/.ssh/id_ed25519, production,
 
 ## Prerequisites
 
-1. **RantaiClaw with the remote-install tools.** See *Getting a RantaiClaw with the tools* below.
+1. **RantaiClaw with the remote-install tools** — the prebuilt bundle (below) ships it; from
+   source, see *Getting a RantaiClaw with the tools*.
 2. **An LLM provider** configured in RantaiClaw (`rantaiclaw onboard`) — the agent is model-driven.
 3. **A target host:** Ubuntu/Debian **x86_64 with KVM** (`/dev/kvm`), reachable over SSH, with sudo.
    You do **not** need `ssh`/`tmux` on your own machine — RantaiClaw connects in-process and
@@ -35,10 +36,25 @@ nqrust-install "on 10.0.0.5, ssh user ubuntu, key ~/.ssh/id_ed25519, production,
 
 ## Install
 
+**Fastest — prebuilt bundle (recommended).** Ships a static `rantaiclaw` (with the ssh+pty
+tools) + both skills + the `nqvm` CLI. You only add your LLM key. Linux x86_64:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NexusQuantum/nqrust-microvm-agent/master/get.sh | bash
+rantaiclaw onboard      # set your LLM provider + key
+rantaiclaw chat
+```
+
+It downloads the latest [release](https://github.com/NexusQuantum/nqrust-microvm-agent/releases),
+verifies the checksum, installs `rantaiclaw` to `~/.local/bin`, and deploys the skills. (Same
+thing via the release: `curl -fsSL https://github.com/NexusQuantum/nqrust-microvm-agent/releases/latest/download/install.sh | bash`.)
+
+**From source** (other platforms, or you already run your own RantaiClaw):
+
 ```bash
 git clone https://github.com/NexusQuantum/nqrust-microvm-agent
 cd nqrust-microvm-agent
-./install.sh            # deploys the skill, verifies the tools, links the wrapper
+./install.sh            # deploys the skills, verifies the tools, stages nqvm
 ```
 
 `install.sh` refuses to proceed if your `rantaiclaw` lacks the `ssh`/`pty` tools, so you can't

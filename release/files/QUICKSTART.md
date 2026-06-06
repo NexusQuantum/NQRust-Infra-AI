@@ -6,13 +6,20 @@ a prompt: a prebuilt **rantaiclaw** agent (with the `ssh` + `pty` tools), both s
 
 ## 1. Set it up (once, on your laptop)
 
+**One-liner (recommended):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/NexusQuantum/nqrust-microvm-agent/master/get.sh | bash
+rantaiclaw onboard      # set your LLM provider + key (OpenRouter / Anthropic / MiniMax)
+```
+
+**Or from this bundle** (if you downloaded the tarball):
 ```bash
 tar xzf nqrust-microvm-agent-*-x86_64-linux.tar.gz
 cd nqrust-microvm-agent-*-x86_64-linux
 ./setup.sh
 ```
-`setup.sh` installs `rantaiclaw` to `~/.local/bin`, runs `rantaiclaw onboard` (set your provider +
-API key — OpenRouter / Anthropic / MiniMax), and deploys the two skills.
+Either way: installs `rantaiclaw` to `~/.local/bin` and deploys the two skills (the one-liner
+prints the `onboard` step; `setup.sh` runs it for you).
 
 > Linux x86_64 only (the binary is static, runs on any modern distro). Other platforms: build
 > from source — see the repo README.
