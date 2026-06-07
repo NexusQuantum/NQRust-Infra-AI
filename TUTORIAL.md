@@ -195,6 +195,7 @@ For a serial console into a VM, the agent uses `pty` to drive `nqvm vm shell <id
 | **Operate:** `nqvm` says unauthorized / 401 | Run `nqvm login --username root --password root` first; token caches in `~/.config/nqvm/`. |
 | **Operate:** `vm create` rejected | It needs **both** a rootfs **and** a kernel image id — `nqvm image list --kind rootfs` / `--kind kernel`. |
 | **Operate:** `nqvm --version` errors | There's no `--version` flag; use `nqvm --help` or `nqvm auth status` to probe. |
+| `Action blocked: rate limit exceeded` mid-drive | rantaiclaw's `[autonomy] max_actions_per_hour` (default 20). Pre-0.6.63 it counted every `pty` keystroke, so a TUI drive tripped it. **Update to ≥ 0.6.63-alpha** (keystrokes no longer count), or raise `max_actions_per_hour` in your config. |
 
 ---
 
