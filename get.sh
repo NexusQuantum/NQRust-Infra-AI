@@ -7,7 +7,11 @@
 #
 # It does NOT run onboard (that needs a terminal) — it prints the one command to run next.
 # Env: NQR_AGENT_VERSION (default: latest) · BINDIR (default ~/.local/bin) · RANTAICLAW_PROFILE
-set -euo pipefail
+#
+# POSIX-sh safe: works whether piped to `sh` (dash on Debian/Ubuntu) or `bash`.
+set -eu
+# pipefail is a bash/zsh feature — enable it only where supported (no-op on dash).
+(set -o pipefail) 2>/dev/null && set -o pipefail || true
 say() { printf '%s\n' "$*"; }
 die() { printf '✗ %s\n' "$*" >&2; exit 1; }
 
