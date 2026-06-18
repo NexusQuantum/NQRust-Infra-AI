@@ -5,6 +5,9 @@ install a working **NQRust-MicroVM** (manager + agent + PostgreSQL) on a Linux h
 from a prompt. This is the *real* procedure, including the gotchas we hit validating
 it end-to-end against a live KVM VM.
 
+> Scope: this tutorial covers **MicroVM**. For the **Hypervisor** (KubeVirt/Longhorn) operate
+> skill and the **NQRust web console**, see the [README](README.md).
+
 ## 0. Mental model
 
 - You run **RantaiClaw** (the agent) on your machine.
@@ -46,8 +49,8 @@ You do **not** need `ssh`/`tmux` on your own machine — RantaiClaw connects in-
 ## 2. Install the skill
 
 ```bash
-git clone https://github.com/NexusQuantum/nqrust-microvm-agent
-cd nqrust-microvm-agent && ./install.sh
+git clone https://github.com/NexusQuantum/NQRust-Infra-AI
+cd NQRust-Infra-AI && ./install.sh
 ```
 `install.sh` refuses to proceed if your rantaiclaw lacks the ssh/pty tools, then deploys
 the skill into your active profile and links a `nqrust-install` wrapper.
