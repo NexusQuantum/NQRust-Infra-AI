@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-command setup for the pre-set-up NQRust-MicroVM agent bundle.
-# Installs the bundled rantaiclaw (with ssh+pty), deploys both skills, and onboards your LLM key.
+# Installs the bundled rantaiclaw (with ssh+pty), deploys the skills, and onboards your LLM key.
 # Usage: ./setup.sh            (override install dir with BINDIR=, profile with RANTAICLAW_PROFILE=)
 set -euo pipefail
 say() { printf '%s\n' "$*"; }
@@ -51,14 +51,16 @@ fi
 
 # 5. deploy the skills AFTER onboarding (onboard --force can wipe the workspace)
 SK="$HOME/.rantaiclaw/profiles/$PROFILE/workspace/skills"
-for s in nqrust-microvm nqrust-microvm-operate; do
+N=0
+for d in "$HERE"/skill/*/; do
+  s="$(basename "$d")"; N=$((N+1))
   mkdir -p "$SK/$s"
   cp -r "$HERE/skill/$s/." "$SK/$s/"
   chmod +x "$SK/$s"/scripts/*.sh 2>/dev/null || true
 done
-say "✓ skills deployed → $SK"
+say "✓ $N skills deployed → $SK"
 LOADED="$("$DEST/rantaiclaw" skills list 2>/dev/null | grep -ci nqrust || true)"
-[ "${LOADED:-0}" -ge 2 ] && say "✓ both skills load" || say "! re-check 'rantaiclaw skills list' (profile=$PROFILE)"
+[ "${LOADED:-0}" -ge "$N" ] && say "✓ all $N skills load" || say "! re-check 'rantaiclaw skills list' (profile=$PROFILE)"
 
 cat <<EOF
 

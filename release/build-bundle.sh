@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Assemble a "pre-set-up agent" release bundle: a prebuilt rantaiclaw (with the ssh+pty tools)
-# + both skills (incl. the nqvm CLI) + a one-command setup. Produces dist/<bundle>.tar.gz.
+# + the skills (incl. the nqvm CLI) + a one-command setup. Produces dist/<bundle>.tar.gz.
 #
 # Usage: release/build-bundle.sh <path-to-rantaiclaw-binary> [tag]
 #   e.g. release/build-bundle.sh ~/rc/target/x86_64-unknown-linux-musl/release/rantaiclaw v0.1.0
@@ -12,7 +12,7 @@ REPO="$(cd "$HERE/.." && pwd)"
 RC_BIN="${1:?usage: build-bundle.sh <rantaiclaw-binary> [tag]}"
 TAG="${2:-v0.1.0}"
 ARCH="$(uname -m)"
-NAME="nqrust-microvm-agent-${TAG}-${ARCH}-linux"
+NAME="nqrust-infra-ai-${TAG}-${ARCH}-linux"
 OUT="$REPO/dist"
 STAGE="$OUT/$NAME"
 
@@ -34,8 +34,9 @@ say "→ staging $NAME"
 rm -rf "$STAGE"; mkdir -p "$STAGE/bin"
 install -m755 "$RC_BIN" "$STAGE/bin/rantaiclaw"
 
-# skills (copy, then drop any local scratch the build helper may have created)
-for s in nqrust-microvm nqrust-microvm-operate; do
+# skills — all of them (copy, then drop any local scratch the build helper may have created)
+for d in "$REPO"/skill/*/; do
+  s="$(basename "$d")"
   mkdir -p "$STAGE/skill/$s"
   cp -r "$REPO/skill/$s/." "$STAGE/skill/$s/"
   chmod +x "$STAGE/skill/$s"/scripts/*.sh 2>/dev/null || true
@@ -45,14 +46,14 @@ rm -rf "$STAGE/skill/nqrust-microvm-operate/.nqrust-src"
 # setup + docs
 install -m755 "$HERE/files/setup.sh" "$STAGE/setup.sh"
 cp "$HERE/files/QUICKSTART.md" "$STAGE/QUICKSTART.md"
-[ -f "$REPO/TUTORIAL.md" ] && cp "$REPO/TUTORIAL.md" "$STAGE/TUTORIAL.md"
+[ -d "$REPO/tutorials" ] && cp -r "$REPO/tutorials" "$STAGE/tutorials"
 [ -f "$REPO/README.md" ]   && cp "$REPO/README.md"   "$STAGE/README.md"
 [ -f "$REPO/LICENSE" ] && cp "$REPO/LICENSE" "$STAGE/LICENSE" 2>/dev/null || true
 RC_VER="$("$RC_BIN" --version 2>/dev/null | awk '{print $2}')"
 cat > "$STAGE/VERSION" <<EOF
 bundle=$TAG
 rantaiclaw=$RC_VER
-skills=nqrust-microvm,$(grep -m1 '^version:' "$REPO/skill/nqrust-microvm/SKILL.md" | awk '{print $2}');nqrust-microvm-operate,$(grep -m1 '^version:' "$REPO/skill/nqrust-microvm-operate/SKILL.md" | awk '{print $2}')
+skills=$(for d in "$REPO"/skill/*/; do s=$(basename "$d"); v=$(grep -m1 '^version:' "$d/SKILL.md" 2>/dev/null | awk '{print $2}'); printf '%s,%s;' "$s" "$v"; done)
 arch=$ARCH-linux
 EOF
 
