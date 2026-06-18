@@ -1,0 +1,84 @@
+/* === NQRUST-THEME (overlay; managed by scripts/apply-theme.sh — do not edit in submodule) ==
+ * NexusQuantum / NQRust brand — light, orange, Montserrat. Activated by
+ * <html data-brand="nqrust"> (branding.ts default). Captured from upstream's brand so it
+ * survives upstream removing it. Reskins the whole console via the semantic tokens. */
+:root[data-brand="nqrust"] {
+  --af: 0 0 0; /* light surfaces → black-alpha tints */
+
+  --font-sans: var(--font-montserrat), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  /* brand → orange family */
+  --brand-navy: #5c1c00;
+  --brand-deep-blue: #b83800; /* darker orange for gradients */
+  --brand-sky: #ff5001; /* primary brand orange */
+  --brand-ink: #8b2e0a;
+
+  /* light neutrals */
+  --background: #ffffff;
+  --foreground: #241812; /* warm near-black body text */
+  --card: #ffffff;
+  --card-foreground: #241812;
+  --popover: #ffffff;
+  --popover-foreground: #241812;
+  --primary: #ff5001;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f6;
+  --secondary-foreground: #241812;
+  --muted: #f1f1f3;
+  --muted-foreground: #6b7280;
+  --accent: #ff5001;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #16a34a;
+  --warning: #b45309;
+  --border: #e7e9ee;
+  --input: #e7e9ee;
+  --ring: #ff5001;
+
+  /* dot / status accents */
+  --accent-orange: #ca8a04;
+  --accent-blue: #2563eb;
+  --accent-green: #16a34a;
+  --accent-teal: #0e7490;
+  --accent-seagreen: #16a34a;
+  --accent-purple: #9333ea;
+  --accent-red: #dc2626;
+  --accent-cornflower: #2563eb;
+
+  --chart-1: #ffa770;
+  --chart-2: #ff7d3a;
+  --chart-3: #ff5001;
+  --chart-4: #e64600;
+  --chart-5: #b83800;
+
+  color-scheme: light;
+}
+
+/* Light-mode surface fixes where the dark design assumed white-on-dark. */
+:root[data-brand="nqrust"] .rail,
+:root[data-brand="nqrust"] .right {
+  background: #fafafa;
+}
+:root[data-brand="nqrust"] .topbar {
+  background: color-mix(in oklab, #ffffff 78%, transparent);
+}
+:root[data-brand="nqrust"] .app::before {
+  opacity: 0.16;
+}
+:root[data-brand="nqrust"] .row:hover {
+  background: oklch(0 0 0 / 3%);
+}
+:root[data-brand="nqrust"] .card.hoverable:hover {
+  background: oklch(0 0 0 / 2%);
+}
+:root[data-brand="nqrust"] .send-btn:hover {
+  opacity: 0.9;
+}
+:root[data-brand="nqrust"] .ops-head h2,
+:root[data-brand="nqrust"] .chat-empty h2 {
+  color: var(--brand-ink);
+}
+/* === /NQRUST-THEME ======================================================================= */
