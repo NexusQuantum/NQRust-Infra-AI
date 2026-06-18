@@ -1,81 +1,108 @@
 #!/usr/bin/env bash
-# Install the nqrust-microvm installer skill into your local RantaiClaw.
-# Usage: ./install.sh [profile]    (default profile: "default")
+# Install NQRust-Infra-AI into your local RantaiClaw — deploy the skills, stage the nqvm
+# CLI, and brand the optional web console.  Usage: ./install.sh [profile]   (default: "default")
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 say() { printf '%s\n' "$*"; }
 
+say "NQRust-Infra-AI · installer"
+say ""
+
 # 1. RantaiClaw present?
 if ! command -v rantaiclaw >/dev/null 2>&1; then
-  say "✗ rantaiclaw not found on PATH."
-  say "  Install a RantaiClaw build that includes the remote-install tools (ssh + pty)."
-  say "  See README.md → 'Getting a RantaiClaw with the tools'."
+  say "✗ rantaiclaw not found on PATH"
+  say "    install a RantaiClaw build with the remote-install tools (ssh + pty)"
+  say "    see README.md → 'Getting a RantaiClaw with the tools'"
   exit 1
 fi
 say "✓ rantaiclaw $(rantaiclaw --version | awk '{print $2}')"
 
-# 2. Are the ssh + pty tools compiled into this binary? (the skill is useless without them)
+# 2. Are the ssh + pty tools compiled into this binary? (the microvm skills need them)
 BIN="$(command -v rantaiclaw)"
 # grep -a reads the binary directly — no dependency on `strings` (binutils, not always installed).
 HAS_TOOLS="$(grep -acF "Secure SSH transport to a remote host" "$BIN" || true)"
 if [ "${HAS_TOOLS:-0}" -eq 0 ]; then
-  say "✗ This rantaiclaw was built WITHOUT the remote-install tools (ssh + pty)."
-  say "  Rebuild with:  cargo build --release --features remote-install"
-  say "  (or install a release that bundles them — see README.md)."
+  say "✗ this rantaiclaw lacks the remote-install tools (ssh + pty)"
+  say "    rebuild:  cargo build --release --features remote-install"
+  say "    (or install a release that bundles them — see README.md)"
   exit 1
 fi
-say "✓ ssh + pty tools present in this binary"
+say "✓ remote-install tools (ssh + pty) present"
 
-# 2b. Stage the nqvm CLI for the operate skill (it is NOT a published release asset yet, so the
-#     agent pushes this bundled binary to target hosts). Best-effort — needs the NQRust-MicroVM
-#     source + cargo; if it can't build, the operate skill builds/pushes on demand instead.
+# 2b. Stage the nqvm CLI for the operate skill (NOT a published release asset yet, so the agent
+#     pushes this bundled binary to target hosts). Best-effort — needs NQRust-MicroVM source + cargo.
 if [ ! -x "$HERE/skill/nqrust-microvm-operate/bin/nqvm" ]; then
-  say "→ staging nqvm for the operate skill (best-effort)…"
+  say "→ staging nqvm (operate skill, best-effort)…"
   if bash "$HERE/skill/nqrust-microvm-operate/scripts/build-nqvm.sh" >/dev/null 2>&1; then
-    say "✓ nqvm staged → skill/nqrust-microvm-operate/bin/nqvm"
+    say "✓ nqvm staged"
   else
-    say "! nqvm not staged (no source/cargo) — set NQRUST_MICROVM_SRC or run"
-    say "  skill/nqrust-microvm-operate/scripts/build-nqvm.sh --clone later. The operate skill"
-    say "  also builds/pushes on demand; see its SKILL.md."
+    say "! nqvm not staged (no source/cargo) — the operate skill builds/pushes it on demand"
   fi
 else
   say "✓ nqvm already staged"
 fi
 
+# 2c. kubectl for the nqrust-hypervisor skill — it drives a Hypervisor cluster locally over
+#     kubectl (not over SSH). Soft check: only matters once you have a cluster, so warn, don't fail.
+if command -v kubectl >/dev/null 2>&1; then
+  say "✓ kubectl present — nqrust-hypervisor can drive a Hypervisor cluster"
+else
+  say "! kubectl not found — needed by nqrust-hypervisor (drives a cluster via kubeconfig)"
+  say "    install kubectl, then drop a kubeconfig at the workspace as 'kubeconfig-hypervisor'"
+fi
+
 # 3. Deploy the skills into the active profile's workspace
-#    - nqrust-microvm          → install (drive the installer TUI)
-#    - nqrust-microvm-operate  → day-2 ops (create VMs etc. via the nqvm CLI)
+#    nqrust-microvm          → install (drive the installer TUI)
+#    nqrust-microvm-operate  → day-2 ops via the nqvm CLI
+#    nqrust-hypervisor       → day-2 ops for a Hypervisor (HCI) cluster via kubectl
 ROOT="${RANTAICLAW_HOME:-$HOME/.rantaiclaw}"
 PROFILE="${1:-${RANTAICLAW_PROFILE:-default}}"
 SKILLS_DIR="$ROOT/profiles/$PROFILE/workspace/skills"
-for s in nqrust-microvm nqrust-microvm-operate; do
+SKILLS="nqrust-microvm nqrust-microvm-operate nqrust-hypervisor"
+say "→ deploying skills (profile: $PROFILE)…"
+for s in $SKILLS; do
   DEST="$SKILLS_DIR/$s"
   mkdir -p "$DEST"
   cp -r "$HERE/skill/$s/." "$DEST/"
   chmod +x "$DEST"/scripts/*.sh 2>/dev/null || true
-  say "✓ skill deployed → $DEST"
+  say "  ✓ $s"
 done
 
-# 4. Confirm they load + nudge on LLM key
-LOADED="$(rantaiclaw skills list 2>/dev/null | grep -ci nqrust-microvm || true)"
-if [ "${LOADED:-0}" -ge 2 ]; then
-  say "✓ both skills loaded (rantaiclaw skills list)"
+# 4. Confirm they load
+WANT="$(set -- $SKILLS; echo $#)"
+LOADED="$(rantaiclaw skills list 2>/dev/null | grep -ci nqrust || true)"
+if [ "${LOADED:-0}" -ge "$WANT" ]; then
+  say "✓ all $WANT skills loaded"
 elif [ "${LOADED:-0}" -gt 0 ]; then
-  say "✓ skill(s) loaded ($LOADED) — re-check 'rantaiclaw skills list'"
+  say "! $LOADED of $WANT skills loaded — re-check 'rantaiclaw skills list'"
 else
   say "! skills copied but not listed — is profile '$PROFILE' the active one?"
 fi
 
-# 5. Optional: link the wrapper onto PATH if ~/.local/bin exists
+# 5. Link the convenience wrapper onto PATH if ~/.local/bin exists
 if [ -d "$HOME/.local/bin" ]; then
   ln -sf "$HERE/bin/nqrust-install" "$HOME/.local/bin/nqrust-install"
   say "✓ wrapper linked → ~/.local/bin/nqrust-install"
 fi
 
+# 6. Brand the optional web console (claw-ui). Upstream is vendored as the `web-ui/` submodule;
+#    the NQRust brand lives in web-ui-theme/ and is layered on by scripts/apply-theme.sh.
+if [ -f "$HERE/.gitmodules" ] && grep -q '"web-ui"' "$HERE/.gitmodules" 2>/dev/null; then
+  git -C "$HERE" submodule update --init web-ui >/dev/null 2>&1 || true
+  if [ -d "$HERE/web-ui/src" ]; then
+    bash "$HERE/scripts/apply-theme.sh" "$HERE/web-ui" >/dev/null && say "✓ web console branded (NQRust)"
+  else
+    say "! web-ui submodule not checked out — run: git submodule update --init web-ui"
+  fi
+fi
+
 say ""
-say "Done. Make sure an LLM provider is configured (rantaiclaw onboard), then:"
-say "  # install:"
-say "  nqrust-install \"on 10.0.0.5, ssh user ubuntu, key ~/.ssh/id_ed25519, production, NAT\""
-say "  # operate (after install):"
-say "  rantaiclaw agent -m \"on 10.0.0.5 (ssh ubuntu), create a microVM named web, 2 vCPU 1GB\""
+say "Done. Next:"
+say "  rantaiclaw onboard   # set your LLM provider + key (if you haven't)"
+say "  ./web-ui.sh          # launch the NQRust web console → http://localhost:3939"
+say ""
+say "  # install a MicroVM host:"
+say "  nqrust-install \"on 10.0.0.5, ssh user ubuntu, key ~/.ssh/id_ed25519, NAT\""
+say "  # operate a Hypervisor cluster (after a kubeconfig is in the workspace):"
+say "  rantaiclaw agent -m \"list all VMs on the Hypervisor cluster\""
