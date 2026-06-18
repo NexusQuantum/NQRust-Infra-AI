@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Online installer for the NQRust-MicroVM agent. Downloads the latest release bundle
-# (prebuilt static rantaiclaw with ssh+pty + both skills + the nqvm CLI), verifies its
-# checksum, installs the binary, and deploys the skills. Non-interactive — safe to pipe:
+# Online installer for NQRust-Infra-AI. Downloads the latest release bundle (prebuilt static
+# rantaiclaw with ssh+pty + the skills + the nqvm CLI), verifies its checksum, installs the
+# binary, and deploys the skills. Non-interactive — safe to pipe:
 #
-#   curl -fsSL https://raw.githubusercontent.com/NexusQuantum/nqrust-microvm-agent/master/get.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/NexusQuantum/NQRust-Infra-AI/master/get.sh | bash
 #
 # It does NOT run onboard (that needs a terminal) — it prints the one command to run next.
 # Env: NQR_AGENT_VERSION (default: latest) · BINDIR (default ~/.local/bin) · RANTAICLAW_PROFILE
@@ -15,7 +15,7 @@ set -eu
 say() { printf '%s\n' "$*"; }
 die() { printf '✗ %s\n' "$*" >&2; exit 1; }
 
-REPO="NexusQuantum/nqrust-microvm-agent"
+REPO="NexusQuantum/NQRust-Infra-AI"
 VER="${NQR_AGENT_VERSION:-latest}"
 PROFILE="${RANTAICLAW_PROFILE:-default}"
 DEST="${BINDIR:-$HOME/.local/bin}"
@@ -33,7 +33,7 @@ if [ "$VER" = "latest" ]; then
 else
   TAG="$VER"
 fi
-ASSET="nqrust-microvm-agent-${TAG}-x86_64-linux.tar.gz"
+ASSET="nqrust-infra-ai-${TAG}-x86_64-linux.tar.gz"
 URL="https://github.com/$REPO/releases/download/$TAG/$ASSET"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -49,7 +49,7 @@ if curl -fsSL -o "$TMP/b.sha256" "$URL.sha256" 2>/dev/null; then
 fi
 
 tar xzf "$TMP/b.tar.gz" -C "$TMP"
-BDIR="$TMP/nqrust-microvm-agent-${TAG}-x86_64-linux"
+BDIR="$TMP/nqrust-infra-ai-${TAG}-x86_64-linux"
 RC="$BDIR/bin/rantaiclaw"
 [ -x "$RC" ] || die "bundle is missing the rantaiclaw binary"
 "$RC" --version >/dev/null 2>&1 || die "the bundled rantaiclaw won't run on this host (arch/libc mismatch)"
@@ -67,11 +67,12 @@ case ":$PATH:" in
   *) say "  ⚠ $DEST is not on your PATH — add it:  export PATH=\"$DEST:\$PATH\"" ;;
 esac
 
-# deploy both skills (incl. the bundled nqvm)
+# deploy all bundled skills (incl. the bundled nqvm)
 SK="$HOME/.rantaiclaw/profiles/$PROFILE/workspace/skills"
-for s in nqrust-microvm nqrust-microvm-operate; do
+for d in "$BDIR"/skill/*/; do
+  s="$(basename "$d")"
   mkdir -p "$SK/$s"
-  cp -r "$BDIR/skill/$s/." "$SK/$s/"
+  cp -r "$d." "$SK/$s/"
   chmod +x "$SK/$s"/scripts/*.sh 2>/dev/null || true
 done
 say "✓ skills deployed → $SK"
@@ -86,4 +87,5 @@ Ready. Next:
        Install nqrust-microvm on 10.0.0.5 over SSH (user ubuntu, password '…').
        Minimal, NAT. Drive to completion; I'll reply "continue".
      After install:  on 10.0.0.5 create a microVM named web, 2 vCPU 1GB, start it
+  4) browser UI?  git clone the repo, then run ./web-ui.sh   (NQRust web console)
 EOF

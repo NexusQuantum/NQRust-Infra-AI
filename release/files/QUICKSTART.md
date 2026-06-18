@@ -1,24 +1,25 @@
-# NQRust-MicroVM agent — Quickstart (pre-set-up bundle)
+# NQRust-Infra-AI — Quickstart (pre-set-up bundle)
 
-This bundle contains everything to install **and operate** NQRust-MicroVM on remote hosts from
-a prompt: a prebuilt **rantaiclaw** agent (with the `ssh` + `pty` tools), both skills, and the
-`nqvm` CLI. You only add your **LLM provider key**.
+This bundle contains everything to install **and operate** NQRust infrastructure from a prompt:
+a prebuilt **rantaiclaw** agent (with the `ssh` + `pty` tools), the skills (MicroVM + Hypervisor),
+and the `nqvm` CLI. You only add your **LLM provider key**. (The browser **web console** isn't in
+the bundle — clone the repo and run `./web-ui.sh` to use it.)
 
 ## 1. Set it up (once, on your laptop)
 
 **One-liner (recommended):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NexusQuantum/nqrust-microvm-agent/master/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/NexusQuantum/NQRust-Infra-AI/master/get.sh | bash
 rantaiclaw onboard      # set your LLM provider + key (OpenRouter / Anthropic / MiniMax)
 ```
 
 **Or from this bundle** (if you downloaded the tarball):
 ```bash
-tar xzf nqrust-microvm-agent-*-x86_64-linux.tar.gz
-cd nqrust-microvm-agent-*-x86_64-linux
+tar xzf nqrust-infra-ai-*-x86_64-linux.tar.gz
+cd nqrust-infra-ai-*-x86_64-linux
 ./setup.sh
 ```
-Either way: installs `rantaiclaw` to `~/.local/bin` and deploys the two skills (the one-liner
+Either way: installs `rantaiclaw` to `~/.local/bin` and deploys the skills (the one-liner
 prints the `onboard` step; `setup.sh` runs it for you).
 
 > Linux x86_64 only (the binary is static, runs on any modern distro). Other platforms: build
@@ -64,4 +65,4 @@ list my VMs   ·   stop web   ·   snapshot web   ·   deploy nginx as a contain
 - **Provider strictness / credits.** A TUI drive is many model calls. OpenRouter / Anthropic are
   lenient; **MiniMax** can throw `tool id … not found (2013)` → type **`/retry`**. Keep credits topped up.
 
-Full walkthrough + troubleshooting: `skill/nqrust-microvm/RUNBOOK.md` and the repo `TUTORIAL.md`.
+Full walkthrough + troubleshooting: `skill/nqrust-microvm/RUNBOOK.md` and the repo `tutorials/`.
