@@ -62,6 +62,20 @@ say "✓ $N skills deployed → $SK"
 LOADED="$("$DEST/rantaiclaw" skills list 2>/dev/null | grep -ci nqrust || true)"
 [ "${LOADED:-0}" -ge "$N" ] && say "✓ all $N skills load" || say "! re-check 'rantaiclaw skills list' (profile=$PROFILE)"
 
+# 6. stage the web console (launcher + theme) so `nqrust-web` works without a git clone
+if [ -f "$HERE/web-ui.sh" ]; then
+  command -v git >/dev/null 2>&1 || say "! git not found — needed by the web console (nqrust-web). Install git."
+  NQDIR="$HOME/.nqrust"
+  mkdir -p "$NQDIR/scripts"
+  cp "$HERE/web-ui.sh" "$NQDIR/web-ui.sh"
+  cp "$HERE/scripts/apply-theme.sh" "$NQDIR/scripts/apply-theme.sh"
+  rm -rf "$NQDIR/web-ui-theme"; cp -r "$HERE/web-ui-theme" "$NQDIR/web-ui-theme"
+  [ -f "$HERE/VERSION" ] && cp "$HERE/VERSION" "$NQDIR/VERSION"
+  chmod +x "$NQDIR/web-ui.sh" "$NQDIR/scripts/apply-theme.sh"
+  ln -sf "$NQDIR/web-ui.sh" "$DEST/nqrust-web"
+  say "✓ web console staged → run: nqrust-web"
+fi
+
 cat <<EOF
 
 Done. Start the agent:

@@ -87,6 +87,27 @@ for d in "$BDIR"/skill/*/; do
 done
 say "✓ skills deployed → $SK"
 
+# stage the web console (launcher + theme) so the browser UI works WITHOUT a git clone.
+# This is lazy: no heavy fetch here — the first `nqrust-web` run clones claw-ui + installs deps.
+if [ -f "$BDIR/web-ui.sh" ]; then
+  command -v git >/dev/null 2>&1 || say "! git not found — needed by the web console (nqrust-web). Install git."
+  NQDIR="$HOME/.nqrust"
+  mkdir -p "$NQDIR/scripts"
+  cp "$BDIR/web-ui.sh" "$NQDIR/web-ui.sh"
+  cp "$BDIR/scripts/apply-theme.sh" "$NQDIR/scripts/apply-theme.sh"
+  rm -rf "$NQDIR/web-ui-theme"; cp -r "$BDIR/web-ui-theme" "$NQDIR/web-ui-theme"
+  [ -f "$BDIR/VERSION" ] && cp "$BDIR/VERSION" "$NQDIR/VERSION"
+  chmod +x "$NQDIR/web-ui.sh" "$NQDIR/scripts/apply-theme.sh"
+  ln -sf "$NQDIR/web-ui.sh" "$DEST/nqrust-web"
+  cat > "$DEST/nqrust-update" <<'UPD'
+#!/usr/bin/env sh
+# Update NQRust (binary + skills + web console) to the latest release.
+exec sh -c 'curl -fsSL https://raw.githubusercontent.com/NexusQuantum/NQRust-Infra-AI/master/get.sh | sh'
+UPD
+  chmod +x "$DEST/nqrust-update"
+  say "✓ web console staged → run: nqrust-web   (first run fetches the console)"
+fi
+
 PATHHINT=""; case ":$PATH:" in *":$DEST:"*) ;; *) PATHHINT="export PATH=\"$DEST:\$PATH\"; ";; esac
 cat <<EOF
 
@@ -97,5 +118,6 @@ Ready. Next:
        Install nqrust-microvm on 10.0.0.5 over SSH (user ubuntu, password '…').
        Minimal, NAT. Drive to completion; I'll reply "continue".
      After install:  on 10.0.0.5 create a microVM named web, 2 vCPU 1GB, start it
-  4) browser UI?  git clone the repo, then run ./web-ui.sh   (NQRust web console)
+  4) browser UI?  run:  nqrust-web      (NQRust web console → http://localhost:3939)
+  •  update later?  run:  nqrust-update
 EOF

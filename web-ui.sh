@@ -1,54 +1,66 @@
 #!/usr/bin/env bash
-# Launch the NQRust web console — one command, from ANY directory.
-#   ./web-ui.sh        # fetch (if needed) + brand + install deps + start
-#   ./web-ui.sh stop   # stop the console + gateway
+# Launch the NQRust web console — one command, from ANY directory, no git clone needed.
+#   nqrust-web         # fetch/update claw-ui (latest) + brand + start
+#   nqrust-web stop    # stop the console + gateway
 #
-# Resolves the repo root absolutely and passes an absolute --dir to `rantaiclaw ui start`,
-# so it never lands on the wrong path (e.g. web-ui/web-ui) regardless of your current dir.
-# It also avoids `rantaiclaw ui install`, which fetches the plain upstream console into
-# ~/.rantaiclaw/ui instead of your NQRust-branded web-ui/.
+# The console (claw-ui) is NOT pinned: it follows upstream latest via `rantaiclaw ui
+# install`, which clones it (or pulls --ff-only) and auto-installs bun + deps. The
+# NQRust brand is layered on top each launch by scripts/apply-theme.sh (idempotent).
+# Compatibility between the binary and claw-ui is maintained upstream by RantAI.
+#
+# Layout (identical in the repo and when staged to ~/.nqrust by get.sh):
+#   <HERE>/web-ui.sh  <HERE>/scripts/apply-theme.sh  <HERE>/web-ui-theme/  <HERE>/VERSION
+# claw-ui itself is fetched to ~/.nqrust/web-ui (override with NQRUST_UI_DIR).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WEBUI="$HERE/web-ui"
+UIDIR="${NQRUST_UI_DIR:-$HOME/.nqrust/web-ui}"
+REPO="NexusQuantum/NQRust-Infra-AI"
 
 say() { printf '%s\n' "$*"; }
+warn() { printf '⚠ %s\n' "$*" >&2; }
 
 case "${1:-up}" in
-  stop) say "→ stopping NQRust console…"; rantaiclaw ui stop --dir "$WEBUI"; exit 0 ;;
+  stop) say "→ stopping NQRust console…"; rantaiclaw ui stop --dir "$UIDIR"; exit 0 ;;
   up|"") ;;
   *) say "usage: $0 [up|stop]"; exit 2 ;;
 esac
 
-say "NQRust-Infra-AI · web console"
-say ""
-
-# tooling
+# --- tooling -------------------------------------------------------------------
 command -v rantaiclaw >/dev/null 2>&1 || {
-  say "✗ rantaiclaw not on PATH — run:  source ~/.cargo/env   (or open a new terminal)"; exit 1; }
-command -v bun >/dev/null 2>&1 || command -v npm >/dev/null 2>&1 || {
-  say "✗ need a JavaScript runtime — install bun (https://bun.sh) or npm"; exit 1; }
+  warn "rantaiclaw not on PATH — open a new terminal or add ~/.local/bin to PATH"; exit 1; }
+command -v git >/dev/null 2>&1 || {
+  warn "git is required to fetch the web console — install git and retry"; exit 1; }
+command -v bun >/dev/null 2>&1 || command -v npm >/dev/null 2>&1 || \
+  say "! no bun/npm found — rantaiclaw will try to auto-install bun (needs curl + unzip)"
 
-# 1. fetch the console submodule if it isn't checked out yet
-if [ ! -d "$WEBUI/src" ]; then
-  say "→ fetching web-ui…"
-  git -C "$HERE" submodule update --init web-ui >/dev/null 2>&1
+say "NQRust-Infra-AI · web console"
+say "  rantaiclaw $(rantaiclaw --version 2>/dev/null | awk '{print $2}')"
+
+# --- update notice (best-effort; never blocks) --------------------------------
+if command -v curl >/dev/null 2>&1; then
+  INST="$(grep -m1 '^bundle=' "$HERE/VERSION" 2>/dev/null | cut -d= -f2 || true)"
+  LATEST="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##' || true)"
+  if [ -n "$INST" ] && [ -n "$LATEST" ] && [ "$INST" != "$LATEST" ] && \
+     [ "$(printf '%s\n%s\n' "$INST" "$LATEST" | sort -V | tail -1)" = "$LATEST" ]; then
+    say "  ↑ NQRust $LATEST tersedia (terpasang $INST) — perbarui dengan: nqrust-update"
+  fi
 fi
 
-# 2. layer the NQRust brand on top of upstream (idempotent)
-bash "$HERE/scripts/apply-theme.sh" "$WEBUI" >/dev/null
-say "✓ NQRust brand applied"
-
-# 3. install deps if missing
-if [ ! -d "$WEBUI/node_modules" ]; then
-  say "→ installing console deps…"
-  if command -v bun >/dev/null 2>&1; then (cd "$WEBUI" && bun install >/dev/null); else (cd "$WEBUI" && npm install >/dev/null); fi
-  say "✓ deps installed"
-else
-  say "✓ deps present"
+# --- 1. fetch / update claw-ui (follow latest) --------------------------------
+# Our skin edits tracked files in the checkout; revert them first so `ui install`'s
+# `git pull --ff-only` runs on a clean tree (otherwise the 2nd launch fails).
+if [ -d "$UIDIR/.git" ]; then
+  git -C "$UIDIR" checkout -- . 2>/dev/null || true
 fi
+say "→ fetching / updating console (claw-ui, latest)…"
+rantaiclaw ui install --dir "$UIDIR"
+say "  claw-ui @ $(git -C "$UIDIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
 
-# 4. start — absolute --dir, so the current directory never matters
+# --- 2. layer the NQRust brand (warn + continue if upstream shifted) ----------
+bash "$HERE/scripts/apply-theme.sh" "$UIDIR" || true
+
+# --- 3. start -----------------------------------------------------------------
 say "→ starting console + gateway…"
-rantaiclaw ui start --dir "$WEBUI"
+rantaiclaw ui start --dir "$UIDIR"
 say ""
 say "✓ NQRust console → http://localhost:3939     (stop with:  $0 stop)"
