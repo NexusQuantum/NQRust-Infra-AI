@@ -23,6 +23,7 @@ list all VMs on the Hypervisor cluster   ·   which nodes are unhealthy?
 |---|---|---|
 | **[NQRust-MicroVM](https://github.com/NexusQuantum/NQRust-MicroVM)** — Firecracker microVMs | **install** (drives the `nqr-installer` TUI over SSH/tmux) + **operate** (`nqvm` CLI) | [tutorials/microvm.md](tutorials/microvm.md) |
 | **Hypervisor** — KubeVirt + Longhorn (HCI) | **operate** an existing cluster via `kubectl` (list/create/start/stop VMs, images, storage, networks, backups) | [tutorials/hypervisor.md](tutorials/hypervisor.md) |
+| **NQRust Suite** — [Analytics](https://github.com/NexusQuantum/installer-NQRust-Analytics) + [Identity Portal](https://github.com/NexusQuantum/installer-NQRust-Portal) | **install** (drives each product's TUI installer + Docker Compose, locally or over SSH), **answer questions**, and **troubleshoot** both stacks | [tutorials/suite.md](tutorials/suite.md) |
 
 More products will land over time — each adds a skill under `skill/` and a tutorial under
 `tutorials/`; installation and the web console below stay the same.
@@ -136,6 +137,38 @@ The `nqrust-hypervisor` skill discovers the cluster at runtime (never from memor
 requirements before creating anything (it won't invent credentials or pick a network), and
 verifies every mutation with a follow-up `kubectl get`. Needs `kubectl` locally (see Prerequisites).
 
+## NQRust Suite — Analytics + Identity Portal
+
+Install, ask about, and troubleshoot **NexusQuantum Analytics** and the **NQRust Identity
+Portal** — locally on this machine or on a remote host over SSH. **Full walkthrough →
+[tutorials/suite.md](tutorials/suite.md).**
+
+The `nqrust-suite` skill drives each product's own TUI installer (`nqrust-analytics install`,
+`nqrust-portal`) and its Docker Compose stack. It discovers the target first (Docker? Compose v2?
+GHCR reachable? ports busy?), picks an install method at runtime (`.deb` one-liner / from source /
+airgapped), gathers the inputs it needs (it **asks** for the OpenAI key, admin password, license
+key, hostname, ports — it never invents them), and **verifies** every install/change with a real
+`docker ps` + health probe before reporting success. For how-to and conceptual questions it pulls
+the **official live docs** as the primary source — [docs.analytics.nexusquantum.id](https://docs.analytics.nexusquantum.id)
+and [docs-identity.nexusquantum.id](https://docs-identity.nexusquantum.id) — and cites them, with
+the bundled `reference/` docs as an offline fallback.
+
+Prereqs: **Docker + Docker Compose v2** on the target (linux/amd64), and a **GHCR PAT** with
+`read:packages` to pull images. Configure the PAT once via the `GHCR_PAT` env var (or
+`docker login ghcr.io`) — the skill sources it from there and never prints it. In the **web
+console** (or `rantaiclaw chat`), just ask:
+
+```
+install NexusQuantum Analytics locally; OpenAI key in $OPENAI_API_KEY, UI on port 3000
+install the NQRust Identity Portal on 10.0.0.7 over SSH, hostname portal.example.com
+is analytics up?   ·   which portal containers are running?   ·   show analytics-ui logs
+analytics login fails with 'role analytics does not exist' — fix it
+```
+
+The Portal install is **two-phase** (Phase 1 brings up the stack; Phase 2 applies the OAuth client
+config after you create the client in the Identity admin console) — the skill pauses between them
+and tells you exactly what to do in the admin UI. Self-signed TLS on the Portal is expected.
+
 ## Web console (recommended)
 
 **The easiest way to use the agent** — chat with it and watch it work, in your browser. This
@@ -171,7 +204,8 @@ Notes:
 skill/nqrust-microvm/          # MicroVM install playbook + scripts (drive the nqr-installer TUI)
 skill/nqrust-microvm-operate/  # MicroVM day-2 ops playbook (nqvm CLI) + ensure-nqvm
 skill/nqrust-hypervisor/       # Hypervisor (HCI) ops playbook (kubectl reference + recipes)
-tutorials/                     # per-product hands-on walkthroughs (microvm.md, hypervisor.md)
+skill/nqrust-suite/            # Analytics + Identity Portal: install/Q&A/troubleshoot (SKILL.md, RUNBOOK.md, reference/, scripts/)
+tutorials/                     # per-product hands-on walkthroughs (microvm.md, hypervisor.md, suite.md)
 web-ui/                        # web console — git submodule of RantAI-dev/claw-ui (upstream)
 web-ui-theme/                  # NQRust brand overlay for the console
 scripts/apply-theme.sh         # layer the NQRust brand onto web-ui/ (internal helper)
@@ -188,5 +222,8 @@ release/                       # build-bundle.sh + bundle files (QUICKSTART, set
   long Build/Base-Image phases, rollback `nqr-installer uninstall --non-interactive --force`).
 - **Hypervisor** — see the gotchas in [tutorials/hypervisor.md](tutorials/hypervisor.md) and the
   troubleshooting section of `skill/nqrust-hypervisor/SKILL.md`.
+- **Suite (Analytics / Portal)** — see `skill/nqrust-suite/RUNBOOK.md` (GHCR `unauthorized`, port
+  conflicts, the `role "analytics" does not exist` Postgres-init gotcha, Document RAG callbacks,
+  Qdrant 409, Portal OAuth redirect mismatch, Identity not healthy, self-signed cert warning).
 - **Web console** — run it from the repo root with `./web-ui.sh`; don't use `rantaiclaw ui install`
   (that fetches the plain upstream console). See *Web console* above.
