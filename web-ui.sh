@@ -14,10 +14,13 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UIDIR="${NQRUST_UI_DIR:-$HOME/.nqrust/web-ui}"
+PORT="${NQRUST_UI_PORT:-3939}"
 REPO="NexusQuantum/NQRust-Infra-AI"
 
 say() { printf '%s\n' "$*"; }
 warn() { printf '⚠ %s\n' "$*" >&2; }
+# True if something is listening on 127.0.0.1:$1 (bash /dev/tcp — no nc/ss needed).
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3>&- 3<&-; return 0; }; return 1; }
 
 case "${1:-up}" in
   stop) say "→ stopping NQRust console…"; rantaiclaw ui stop --dir "$UIDIR"; exit 0 ;;
@@ -59,8 +62,25 @@ say "  claw-ui @ $(git -C "$UIDIR" rev-parse --short HEAD 2>/dev/null || echo '?
 # --- 2. layer the NQRust brand (warn + continue if upstream shifted) ----------
 bash "$HERE/scripts/apply-theme.sh" "$UIDIR" || true
 
-# --- 3. start -----------------------------------------------------------------
+# --- 3. take over :$PORT if another console is already serving there ----------
+# `rantaiclaw ui start` no-ops when the port is busy, so an existing (e.g. upstream-
+# branded) console on this port would keep showing instead of our themed one.
+if port_busy "$PORT"; then
+  warn "a console is already running on :$PORT — taking it over for the NQRust-branded one"
+  rantaiclaw ui stop >/dev/null 2>&1 || true            # default dir (~/.rantaiclaw/ui)
+  rantaiclaw ui stop --dir "$UIDIR" >/dev/null 2>&1 || true
+  for _ in 1 2 3 4 5; do port_busy "$PORT" || break; sleep 1; done
+  if port_busy "$PORT"; then                            # still up → free the port directly
+    if command -v fuser >/dev/null 2>&1; then fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
+    elif command -v lsof  >/dev/null 2>&1; then kill $(lsof -ti "tcp:${PORT}" 2>/dev/null) 2>/dev/null || true
+    fi
+    for _ in 1 2 3 4 5; do port_busy "$PORT" || break; sleep 1; done
+  fi
+  port_busy "$PORT" && warn "could not free :$PORT — stop the other console, then re-run nqrust-web" || true
+fi
+
+# --- 4. start -----------------------------------------------------------------
 say "→ starting console + gateway…"
-rantaiclaw ui start --dir "$UIDIR"
+rantaiclaw ui start --dir "$UIDIR" --port "$PORT"
 say ""
 say "✓ NQRust console → http://localhost:3939     (stop with:  $0 stop)"
