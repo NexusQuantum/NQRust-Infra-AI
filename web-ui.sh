@@ -12,7 +12,14 @@
 #   <HERE>/web-ui.sh  <HERE>/scripts/apply-theme.sh  <HERE>/web-ui-theme/  <HERE>/VERSION
 # claw-ui itself is fetched to ~/.nqrust/web-ui (override with NQRUST_UI_DIR).
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve through symlinks: nqrust-web is symlinked into ~/.local/bin → ~/.nqrust/web-ui.sh,
+# so BASH_SOURCE is the symlink. Follow it so scripts/ + web-ui-theme/ + VERSION resolve.
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+  _d="$(cd -P "$(dirname "$SELF")" && pwd)"; SELF="$(readlink "$SELF")"
+  case "$SELF" in /*) ;; *) SELF="$_d/$SELF" ;; esac
+done
+HERE="$(cd -P "$(dirname "$SELF")" && pwd)"
 UIDIR="${NQRUST_UI_DIR:-$HOME/.nqrust/web-ui}"
 PORT="${NQRUST_UI_PORT:-3939}"
 REPO="NexusQuantum/NQRust-Infra-AI"
