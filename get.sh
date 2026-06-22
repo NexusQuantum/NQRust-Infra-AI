@@ -108,18 +108,17 @@ if [ -f "$BDIR/web-ui.sh" ]; then
   cat > "$DEST/nqrust-update" <<'UPD'
 #!/usr/bin/env sh
 # Update NQRust to the latest: bundle (skills + web console + bundled binary) AND the
-# rantaiclaw binary (latest upstream release you publish). Quiet — only essentials.
+# rantaiclaw binary (latest upstream release you publish).
 set -e
-printf '→ updating NQRust…\n'
+printf '→ updating NQRust bundle…\n'
 curl -fsSL https://raw.githubusercontent.com/NexusQuantum/NQRust-Infra-AI/master/get.sh | NQR_QUIET=1 sh
 if command -v rantaiclaw >/dev/null 2>&1; then
-  before="$(rantaiclaw --version 2>/dev/null | awk '{print $2}')"
-  rantaiclaw update --yes >/dev/null 2>&1 || true
-  after="$(rantaiclaw --version 2>/dev/null | awk '{print $2}')"
-  if [ "$before" != "$after" ]; then printf '✓ rantaiclaw %s → %s\n' "$before" "$after"
-  else printf '✓ rantaiclaw %s (latest)\n' "$after"; fi
+  printf '→ rantaiclaw binary…\n'
+  # Show the real result (don't hide it) so a failed update isn't mistaken for "latest".
+  rantaiclaw update --yes || printf '! binary update skipped/failed (current: %s)\n' \
+    "$(rantaiclaw --version 2>/dev/null | awk '{print $2}')"
 fi
-printf '✓ NQRust up to date\n'
+printf '✓ done\n'
 UPD
   chmod +x "$DEST/nqrust-update"
   say "✓ web console ready → run: nqrust-web"
