@@ -99,13 +99,15 @@ if [ -f "$BDIR/web-ui.sh" ]; then
   command -v git >/dev/null 2>&1 || say "! git not found — needed by the web console (nqrust-web). Install git."
   NQDIR="$HOME/.nqrust"
   mkdir -p "$NQDIR/scripts"
-  cp "$BDIR/web-ui.sh" "$NQDIR/web-ui.sh"
+  # Atomic install (temp + mv): never truncate-in-place a script that may be executing
+  # right now — e.g. nqrust-update runs get.sh which rewrites nqrust-update itself.
+  install -m755 "$BDIR/web-ui.sh" "$NQDIR/.web-ui.sh.$$" && mv -f "$NQDIR/.web-ui.sh.$$" "$NQDIR/web-ui.sh"
   cp "$BDIR/scripts/apply-theme.sh" "$NQDIR/scripts/apply-theme.sh"
   rm -rf "$NQDIR/web-ui-theme"; cp -r "$BDIR/web-ui-theme" "$NQDIR/web-ui-theme"
   [ -f "$BDIR/VERSION" ] && cp "$BDIR/VERSION" "$NQDIR/VERSION"
-  chmod +x "$NQDIR/web-ui.sh" "$NQDIR/scripts/apply-theme.sh"
+  chmod +x "$NQDIR/scripts/apply-theme.sh"
   ln -sf "$NQDIR/web-ui.sh" "$DEST/nqrust-web"
-  cat > "$DEST/nqrust-update" <<'UPD'
+  cat > "$DEST/.nqrust-update.$$" <<'UPD'
 #!/usr/bin/env sh
 # Update NQRust to the latest: bundle (skills + web console + bundled binary) AND the
 # rantaiclaw binary (latest upstream release you publish).
@@ -120,7 +122,7 @@ if command -v rantaiclaw >/dev/null 2>&1; then
 fi
 printf '✓ done\n'
 UPD
-  chmod +x "$DEST/nqrust-update"
+  chmod +x "$DEST/.nqrust-update.$$"; mv -f "$DEST/.nqrust-update.$$" "$DEST/nqrust-update"
   say "✓ web console ready → run: nqrust-web"
 fi
 
