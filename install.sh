@@ -56,10 +56,11 @@ fi
 #    nqrust-microvm          → install (drive the installer TUI)
 #    nqrust-microvm-operate  → day-2 ops via the nqvm CLI
 #    nqrust-hypervisor       → day-2 ops for a Hypervisor (HCI) cluster via kubectl
+#    nqrust-suite            → install/Q&A/troubleshoot NQRust Analytics + Identity Portal
 ROOT="${RANTAICLAW_HOME:-$HOME/.rantaiclaw}"
 PROFILE="${1:-${RANTAICLAW_PROFILE:-default}}"
 SKILLS_DIR="$ROOT/profiles/$PROFILE/workspace/skills"
-SKILLS="nqrust-microvm nqrust-microvm-operate nqrust-hypervisor"
+SKILLS="nqrust-microvm nqrust-microvm-operate nqrust-hypervisor nqrust-suite"
 say "→ deploying skills (profile: $PROFILE)…"
 for s in $SKILLS; do
   DEST="$SKILLS_DIR/$s"
