@@ -58,10 +58,20 @@ RC="$BDIR/bin/rantaiclaw"
 HAS="$(grep -acF "Secure SSH transport to a remote host" "$RC" || true)"
 [ "${HAS:-0}" -ge 1 ] || die "the bundled binary lacks the remote-install (ssh+pty) tools"
 
-# install the binary
+# install the binary — but never silently downgrade a newer rantaiclaw already on PATH.
+# Set NQR_FORCE=1 to install the bundled binary regardless.
+NEW_VER="$("$RC" --version 2>/dev/null | awk '{print $2}')"
+CUR_BIN="$(command -v rantaiclaw 2>/dev/null || true)"
+CUR_VER=""; [ -n "$CUR_BIN" ] && CUR_VER="$("$CUR_BIN" --version 2>/dev/null | awk '{print $2}')"
 mkdir -p "$DEST"
-install -m755 "$RC" "$DEST/rantaiclaw"
-say "✓ installed rantaiclaw $("$RC" --version | awk '{print $2}') → $DEST/rantaiclaw"
+if [ "${NQR_FORCE:-0}" != "1" ] && [ -n "$CUR_VER" ] && [ "$CUR_VER" != "$NEW_VER" ] && \
+   [ "$(printf '%s\n%s\n' "$CUR_VER" "$NEW_VER" | sort -V | tail -1)" = "$CUR_VER" ]; then
+  say "✓ keeping existing rantaiclaw $CUR_VER ($CUR_BIN) — newer than bundled $NEW_VER"
+  say "  (force the bundled build with: NQR_FORCE=1)"
+else
+  install -m755 "$RC" "$DEST/rantaiclaw"
+  say "✓ installed rantaiclaw $NEW_VER → $DEST/rantaiclaw"
+fi
 case ":$PATH:" in
   *":$DEST:"*) ;;
   *) say "  ⚠ $DEST is not on your PATH — add it:  export PATH=\"$DEST:\$PATH\"" ;;
