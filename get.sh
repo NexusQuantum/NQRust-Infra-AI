@@ -92,12 +92,10 @@ say "✓ skills deployed → $SK"
 if [ -f "$BDIR/web-ui.sh" ]; then
   command -v git >/dev/null 2>&1 || say "! git not found — needed by the web console (nqrust-web). Install git."
   NQDIR="$HOME/.nqrust"
-  mkdir -p "$NQDIR/scripts"
+  mkdir -p "$NQDIR"
   cp "$BDIR/web-ui.sh" "$NQDIR/web-ui.sh"
-  cp "$BDIR/scripts/apply-theme.sh" "$NQDIR/scripts/apply-theme.sh"
-  rm -rf "$NQDIR/web-ui-theme"; cp -r "$BDIR/web-ui-theme" "$NQDIR/web-ui-theme"
   [ -f "$BDIR/VERSION" ] && cp "$BDIR/VERSION" "$NQDIR/VERSION"
-  chmod +x "$NQDIR/web-ui.sh" "$NQDIR/scripts/apply-theme.sh"
+  chmod +x "$NQDIR/web-ui.sh"
   ln -sf "$NQDIR/web-ui.sh" "$DEST/nqrust-web"
   cat > "$DEST/nqrust-update" <<'UPD'
 #!/usr/bin/env sh
