@@ -1,17 +1,20 @@
 ---
 name: nqrust-hypervisor
-description: Operate a Hypervisor HCI cluster (KubeVirt VMs/VMIs, Longhorn storage, VM images, networks, backups, templates, nodes) from natural language by driving `kubectl` against the cluster via a kubeconfig. Discovers cluster facts at runtime (never from memory) and verifies every mutation with a follow-up read. Requires `kubectl` locally and a Hypervisor kubeconfig in the RantaiClaw workspace.
-version: 0.1.0
-tags: [hypervisor, hci, kubevirt, longhorn, kubectl, operations, day2]
+description: Operate a Hypervisor HCI cluster — i.e. Harvester (the backend is Harvester; the UI is re-skinned as "Hypervisor", so "Hypervisor" and "Harvester" mean the same system) — covering KubeVirt VMs/VMIs, Longhorn storage, VM images, networks, backups, templates, and nodes, from natural language by driving `kubectl` against the cluster via the user-provided kubeconfig (the only communication channel). Triggers on "Hypervisor" OR "Harvester" or anything about this cluster's VMs/storage/networks. Always presents the system as "Hypervisor" (never says "Harvester") while keeping real harvesterhci.io identifiers in commands. Discovers cluster facts at runtime (never from memory) and verifies every mutation with a follow-up read. Requires `kubectl` locally and a Hypervisor kubeconfig in the RantaiClaw workspace.
+version: 0.4.0
+tags: [hypervisor, harvester, hci, kubevirt, longhorn, kubectl, operations, day2]
 ---
 
 # NQRust Hypervisor operations (Hypervisor HCI, via `kubectl`)
 
 Comprehensive operator skill for a Hypervisor HCI cluster, driven entirely through
-`kubectl`. Use this skill for ANYTHING about Hypervisor: virtual machines (VM/VMI), VM
+`kubectl`. Use this skill for ANYTHING about **Hypervisor OR Harvester** — they are the
+SAME system (the backend is Harvester HCI; the UI is re-skinned as "Hypervisor"). So if
+the user says "Hypervisor" or "Harvester", or asks about virtual machines (VM/VMI), VM
 images, volumes/storage (Longhorn), networks, nodes, backups, templates, cluster health,
-or installing/rotating a kubeconfig. If a question touches Hypervisor, KubeVirt, or
-Longhorn, this skill applies.
+or installing/rotating a kubeconfig — this skill applies. If a question touches Hypervisor,
+Harvester, KubeVirt, or Longhorn, this skill applies. (See Golden Rules 10–11 for the
+naming/execution split and the kubeconfig-only rule — read them; they are central.)
 
 The cluster is whatever the configured kubeconfig points to — do NOT assume a fixed IP or
 hostname. The API server address, node names, and versions can change between
@@ -21,6 +24,32 @@ of hardcoding them.
 ## Tools
 - name: shell
   kind: builtin
+
+## Helper scripts & references (use them — they encode the proven path)
+This skill ships runnable helpers and detailed references alongside SKILL.md. They
+are READ-ONLY on the cluster (none of them create/delete/mutate) and exist so you
+don't forget a step or claim a result you didn't verify. Run them with the `shell`
+tool from the skill directory.
+
+- `scripts/env.sh` — source it (`. scripts/env.sh`) to resolve & export the
+  Hypervisor `KUBECONFIG` and get helpers (`kc`, `emit`, `has`, `hv_preflight`).
+- `scripts/discover.sh` — live cluster facts in one shot: API server, nodes, ready
+  VM images + per-image storageClass, NADs + their `ipam`, storage classes, and
+  VM/VMI inventory. Run this BEFORE creating or diagnosing — base answers on it.
+- `scripts/verify-vm.sh <vm-name> [ns]` — the mandatory post-mutation check,
+  packaged: emits a VERDICT plus real phase/PVC/IP/events. Run after every
+  create/apply/start/stop/restart.
+- `scripts/ssh-check.sh <lan-ip> <user> [password]` — PROVE a VM is SSH-able
+  (reachability, auth-method probe, real login via sshpass or python pexpect). A
+  LAN IP alone is not proof.
+- `RUNBOOK.md` — step-by-step procedures (create an SSH-able VM; recreate to change
+  login/network; fix a DOWN bridge NIC; power ops; kubeconfig install).
+- `reference/pitfalls.md` — the full failure catalog (symptom → root cause → fix)
+  behind the summaries in this file. Consult it when something doesn't behave.
+
+These encode hard-won lessons (cloudimg-not-ISO, per-image storageClass,
+first-boot-only cloud-init, networkData for the bridge NIC, proving SSH). Prefer
+running the script over re-deriving the commands by hand.
 
 ## GOLDEN RULES (read first, every time)
 1. NEVER answer a Hypervisor question from memory, assumption, or a "plausible"
@@ -50,15 +79,38 @@ of hardcoding them.
 9. If a kubectl command errors, is rejected, or exits non-zero: QUOTE the exact
    error text, state plainly that the action FAILED, give the likely cause, and
    stop. Do NOT report success, and do NOT fabricate a result from memory.
-10. NAMING — in everything YOU write to the user (prose, summaries, tables, the names you
-   give things) always call this the **Hypervisor**; NEVER write the word "Harvester". If
-   the user says "Hypervisor" they mean THIS cluster — treat the two as identical and act on
-   it. This is presentation ONLY: keep the real Kubernetes identifiers unchanged inside
-   commands (`harvesterhci.io`, the `harvester-system` namespace, `harvester-webhook`, the
-   `creator: harvester` label) — rewriting them breaks the command. When a real error or
-   command output contains the literal token "harvester" (e.g. `service "harvester-webhook"`),
-   quote it EXACTLY (rules 8-9), then describe it in your own words as the Hypervisor (e.g.
-   "the Hypervisor admission webhook is down").
+10. HYPERVISOR = HARVESTER (skinned UI) — this is the single most important framing,
+   read it carefully:
+   - **What it is:** the platform's backend IS Harvester HCI. The product UI has been
+     re-skinned/rebranded as "**Hypervisor**". So "Hypervisor" and "Harvester" are the
+     SAME system — Hypervisor is just Harvester with a skin.
+   - **TRIGGER:** if the user says "Hypervisor" OR "Harvester" (or anything about VMs,
+     KubeVirt, Longhorn, VM images, this cluster), THIS skill applies and they mean THIS
+     same cluster. Never tell the user they are "different" clusters or ask which one —
+     treat the two words as identical and act.
+   - **PRESENTATION (what you SAY/WRITE):** in everything you write to the user — prose,
+     summaries, tables, names you assign — ALWAYS call it the **Hypervisor**. NEVER write
+     the word "Harvester" in your own words. If the user wrote "Harvester", answer about
+     the "Hypervisor" (same thing) without correcting them.
+   - **BACKEND/EXECUTION (what you RUN):** treat it AS Harvester. Keep every real
+     Kubernetes identifier EXACTLY as-is inside commands and manifests —
+     `harvesterhci.io` API group, the `harvester-system` namespace, `harvester-webhook`,
+     the `creator: harvester` label, `kubectl get …harvesterhci.io …`. Rewriting any of
+     these to "hypervisor" BREAKS the command. The rename is cosmetic, presentation-only;
+     the backend is literally Harvester.
+   - **Quoting real output:** when actual command output or an error contains the literal
+     token "harvester" (e.g. `service "harvester-webhook"`), quote it EXACTLY (rules 8-9),
+     then describe it in your OWN words as the Hypervisor (e.g. "the Hypervisor admission
+     webhook is down").
+11. KUBECONFIG IS THE ONLY CHANNEL — anything about the Hypervisor/Harvester is done by
+   driving `kubectl` against the kubeconfig the user provided (stored in the workspace as
+   `kubeconfig-hypervisor`; see "Connection"). That kubeconfig already grants full cluster
+   access — it IS your tool for talking to the platform. So: NEVER ask the user for
+   "hypervisor/harvester credentials", a UI password, an API token, or to "log in" — you
+   already have access via the kubeconfig. If a task needs cluster facts or a change, reach
+   for `kubectl` (or the `scripts/`), not the UI and not the user. If the kubeconfig is
+   missing/broken, the ONLY thing to ask for is a fresh kubeconfig (see "Installing /
+   rotating a kubeconfig"), nothing else.
 
 ## Connection — how kubectl reaches the cluster
 Every command MUST run with the Hypervisor kubeconfig in the `KUBECONFIG` env var. The
@@ -140,8 +192,14 @@ Resource short names in parentheses.
 - Backups / snapshots:
   - `kubectl get vmbackup -A` ; `kubectl get vmrestore -A`
   - `kubectl get snapshots.longhorn.io -n longhorn-system`
-- Networking:
-  - `kubectl get network-attachment-definitions -A`   # VM networks (net-attach-def)
+- Networking (check the WHOLE stack, top-down, before creating a VM that needs LAN/SSH):
+  - `kubectl get clusternetworks.network.harvesterhci.io`   # (cn) cluster networks (the physical uplink layer)
+  - `kubectl get vlanconfigs.network.harvesterhci.io -A`    # (vc) VLAN configs binding a cluster network to node NICs
+  - `kubectl get network-attachment-definitions -A`         # (net-attach-def) the VM Networks VMs actually attach to
+  - A VM's bridge NIC attaches to a NAD (VM Network); that NAD rides on a VLANConfig
+    on a ClusterNetwork. If there is NO ClusterNetwork / VM Network yet, a LAN/SSH VM
+    cannot get a routable IP — see "Gather requirements" (ask the user to create one,
+    or fall back to pod-only).
 - SSH keypairs: `kubectl get keypairs.harvesterhci.io -A`   # (kp)
 - Anything unknown: discover with
   `kubectl api-resources --api-group=harvesterhci.io` (also kubevirt.io,
@@ -151,26 +209,73 @@ Resource short names in parentheses.
 Do NOT start building a manifest or running create/apply commands until you have
 the user's explicit answers. Ask concise, batched questions first, echo back a
 summary, and proceed only after the user confirms. Never fill gaps with invented
-defaults — especially credentials.
+defaults — especially credentials. Run `scripts/discover.sh` first so your
+questions are grounded in what actually exists.
 
-For a VM, confirm at least:
+### STEP 0 — Pre-flight network check (do this BEFORE asking the rest)
+A VM you can SSH to needs a routable LAN IP, which needs a VM Network (NAD) that
+rides on a ClusterNetwork. So FIRST check the network stack exists:
+```
+kubectl get clusternetworks.network.harvesterhci.io
+kubectl get network-attachment-definitions -A
+```
+- If a usable VM Network (NAD) already exists → list them and let the user pick
+  which to attach.
+- If there is NO cluster network / VM Network yet → you CANNOT make an SSH-able VM
+  until one exists. Tell the user plainly, and ASK: do they want to create a
+  cluster network / VM Network first (and **what name** should it have)? Creating
+  ClusterNetwork/VLANConfig/VM-Network is an admin action — confirm name, the node
+  uplink NIC, and VLAN with the user; never invent these. (If they only need an
+  internal VM, they can proceed pod-network-only with no SSH from the LAN.)
+
+### STEP 1 — Image type: ASK cloudimg vs live-server, and RECOMMEND cloudimg
+Always ask which kind of image, and recommend the cloud image:
+- **Cloud image (`*-cloudimg-*`, `.img`/qcow2) — RECOMMENDED.** It's a ready OS:
+  boots straight in, cloud-init sets user/password/SSH and DHCPs the NICs, no
+  manual install. Fastest, "instant", no extra setup. Default to this.
+- **Live-server ISO (`*-live-server-*.iso`) — only if the user insists.** It's an
+  INSTALLER: the VM boots into the manual installer, cloud-init is ignored, and it
+  needs a separate blank target disk (and either manual install via console or an
+  autoinstall seed). Slower and more work. Steer the user to cloudimg unless they
+  have a specific reason.
+If no cloud image exists yet, offer to import one (VirtualMachineImage
+`sourceType: download`, e.g. the Ubuntu 24.04 cloudimg URL) and wait for
+PROGRESS=100 before creating the VM.
+
+### STEP 2 — Confirm the rest (ask only for what's missing)
 - Name and namespace.
-- vCPU, RAM, root disk size.
-- Which image to clone from (list ready images and let the user pick).
-- Login method: SSH public key (preferred — ask the user to provide it) OR a
-  username + password. If password, ask the user to supply it; do NOT make one
-  up. Ask whether SSH access is needed at all.
-- Network — this is the #1 thing to confirm if SSH is wanted (see "Networking
-  for SSH / LAN access" below). The pod network alone gives only an internal
-  cluster IP that you CANNOT ssh to from a laptop. For SSH, a bridge interface
-  on a NetworkAttachmentDefinition is required. ASK the user which network to
-  attach (list the available NADs), and whether they want pod-only or bridge.
-- Anything else relevant (extra disks, cloud-init packages, static IP, etc.).
+- vCPU, RAM, root disk size (disk ≥ the image's virtual size).
+- **Login credentials — get them RIGHT so login actually works (this failed before).**
+  SSH public key (preferred — ask the user to provide it) OR username + password.
+  If password: the user MUST supply it; never invent one. Put it in cloud-init
+  correctly so the user is actually created and password login works:
+  - define the user under `users:` with `lock_passwd: false` (and `sudo:
+    'ALL=(ALL) NOPASSWD:ALL'` if they want sudo),
+  - set the password via `chpasswd: { list: "<user>:<pass>", expire: false }`,
+  - set `ssh_pwauth: true` (for password login) or `ssh_authorized_keys` (for key).
+  Remember cloud-init is FIRST-BOOT only — these must be present at create time, not
+  patched in later (see Networking → first-boot caveat). After boot, PROVE login
+  works with `scripts/ssh-check.sh` — don't just assume it.
+- **Network / SSH reachability — the thing that bit us repeatedly.** The pod network
+  alone gives only an internal IP you CANNOT ssh to from a laptop. For SSH, the VM
+  needs a bridge NIC on a VM Network (NAD, from STEP 0) AND cloud-init `networkData`
+  enabling DHCP on BOTH NICs (without it the bridge NIC stays DOWN with no IP).
+  Confirm: pod-only, or bridge + which NAD. The goal state is: VMI Running, the
+  `nic-lan` interface holds a `192.168.x.x` IP, and `ssh <user>@<ip>` logs in.
+- Anything else relevant (extra disks, cloud-init packages like docker, static IP).
 
 If the user already gave some of these, only ask for what's missing. When every
 required value is known, show the final summary + manifest, then apply after
 confirmation. The same "ask first" rule applies to images (source URL),
 networks, and any resource carrying a secret or a user-facing choice.
+
+### Definition of done for "create an SSH-able VM"
+Don't report success until ALL are true and VERIFIED this turn:
+1. `scripts/verify-vm.sh <name> <ns>` → VERDICT=RUNNING, PVC Bound.
+2. The bridge NIC has a real LAN IP (`nic-lan -> 192.168.x.x`), not just a pod IP.
+3. `scripts/ssh-check.sh <lan-ip> <user> [password]` → SSH LOGIN OK with real
+   `whoami`/`hostname` output.
+Until then it is NOT done — say what's still pending, don't claim "ready".
 
 ## Creating a VM (the Hypervisor-native pattern)
 First complete "Gather requirements before creating anything" above. Then: a
@@ -280,6 +385,10 @@ Guest NIC naming: the pod NIC is usually `enp1s0` and the bridge NIC `enp2s0`,
 but verify from `ip a` / the console if DHCP doesn't land; adjust networkData
 names to match.
 
+Power field: prefer `spec.runStrategy: RerunOnFailure` (or `Always`). `spec.running:
+true` still works but kubectl warns it is deprecated — use runStrategy in new
+manifests. To stop/start via patch, set runStrategy `Halted` ↔ `RerunOnFailure`.
+
 ## Networking for SSH / LAN access
 A VM on the pod network only gets an internal cluster IP (e.g. 10.52.x.x) via
 `masquerade`. You CANNOT ssh to that from outside the cluster. To make a VM
@@ -340,16 +449,66 @@ on the SAME cloudinit disk as userData:
             ...
 ```
 
-`networkData` is applied by cloud-init on FIRST boot of a new instance, so it
-works cleanly on a freshly-created VM. For an ALREADY-running VM where the NIC
-is DOWN, either (a) bring it up in-guest via the console:
-`sudo dhclient enp2s0` (or write a netplan and `sudo netplan apply`), or
-(b) recreate the VM with the networkData above. Confirm with the user before
-recreating, since that deletes the current VM/disk.
+### CRITICAL: cloud-init runs only on FIRST boot — patch+restart does NOT re-apply it
+The ENTIRE cloud-init payload (userData AND networkData) — the login user, the
+password, `ssh_pwauth`, SSH keys, and the per-NIC DHCP config — is processed by
+cloud-init ONLY on the first boot of a new instance. The disk records that the
+instance-id already ran, so on later boots cloud-init SKIPS the user/network
+modules. Therefore:
+
+- Editing a running VM's cloud-init (`kubectl patch` / `kubectl edit`) and then
+  RESTARTING it does NOT change the login user, the password, or the NIC config.
+  The read-back of `spec` will look correct, but the GUEST is unchanged.
+- Symptom of getting this wrong: console login for the user you "set" fails with
+  `Login incorrect` (the user was never created), or the bridge NIC stays DOWN,
+  even though the VM `spec` shows the new cloud-init.
+- The ONLY reliable way to apply new cloud-init (new user/password/network) is to
+  DELETE + RECREATE the VM (and its root-disk PVC) so it boots fresh. Confirm with
+  the user first (this destroys the current disk), then recreate with the correct
+  userData + networkData from the start. This is the proven fix — do not waste
+  turns patching+restarting and expecting credentials to change.
+
+For an ALREADY-running VM whose bridge NIC is merely DOWN (cloud-init was correct
+but the NIC didn't come up), the cleanest fix is still a recreate (or a full
+reboot, which re-runs netplan from the already-written config). In-guest manual
+recovery is a LAST RESORT and is fragile on modern cloud images — see the
+in-guest note in Troubleshooting (`dhclient` is NOT present on Ubuntu 24.04
+cloudimg; `networkctl renew` fails if the NIC isn't managed yet).
 
 To add SSH/bridge connectivity to an EXISTING VM, you must edit its interfaces
 + networks (a `kubectl edit vm` / patch) and reboot the VM — confirm with the
-user first, then restart so the new NIC attaches.
+user first, then restart so the new NIC attaches. (Note the first-boot caveat
+above: if the change also needs cloud-init network/user changes, a reboot alone
+may not apply them — a recreate is the reliable path.)
+
+## Proving SSH actually works (don't claim "SSH-ready" without testing)
+A VM having a LAN IP is NOT proof it is SSH-able. After the bridge NIC has an IP,
+verify a real login before telling the user it works — and verify from a host on
+the SAME LAN as the bridge IP (e.g. the box running RantaiClaw, if it shares that
+subnet). Steps:
+
+1. Reachability: `ping -c2 <lan-ip>` and `nc -z -w3 <lan-ip> 22` (or
+   `timeout 5 bash -c 'cat </dev/null >/dev/tcp/<lan-ip>/22' && echo open`).
+2. Confirm password auth is even enabled (catches the publickey-only trap):
+   `ssh -o PreferredAuthentications=none -o StrictHostKeyChecking=no <user>@<lan-ip>`
+   — read the `Authentications that can continue:` line. It must list `password`
+   if you configured `ssh_pwauth: true`. If it shows only `publickey`, the server
+   rejects passwords (password login is off, or cloud-init didn't apply — see the
+   first-boot caveat); you'll need an SSH key instead.
+3. Full login test. `sshpass` is the simple way but is often NOT installed (and
+   installing it may need sudo). Prefer whichever is available:
+   - If `sshpass` exists: `sshpass -p '<password>' ssh -o StrictHostKeyChecking=no <user>@<lan-ip> 'whoami; hostname; ip -4 addr show enp2s0 | grep inet'`
+   - Otherwise drive it with Python `pexpect` (usually present): spawn
+     `ssh -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no <user>@<lan-ip> '<cmd>'`, `expect` the password prompt,
+     `sendline` the password, then read the output.
+4. Success criteria — the remote command actually returned: `whoami` == the user,
+   `hostname` == the VM name, and `enp2s0` shows `inet <lan-ip>/...`. Only THEN
+   report "SSH works" — quote the real output, never a guess.
+
+Example (proven shape): a VM `<vm-name>` cloned from a `*-cloudimg-*` image, with
+a bridge NIC on the chosen NAD + networkData DHCP on both NICs, came up with LAN
+IP `192.168.18.x`, and `ssh <user>@192.168.18.x` logged in (password auth, sudo
+via NOPASSWD). Use placeholders in real runs; never hardcode a real password.
 
 ## Mutating operations (CONFIRM before running)
 For ANY create/delete/apply/scale/power action: first state in plain language
@@ -362,6 +521,9 @@ after the user confirms.
   (if the `virt` plugin is absent, toggle the VM's `spec.runStrategy`/`running`
    field with `kubectl patch` instead.)
 - Delete a VM:  `kubectl delete virtualmachine.kubevirt.io <name> -n <ns>`
+  (the root-disk PVC may survive the VM; when recreating fresh, also delete it:
+  `kubectl delete pvc <name>-disk-0 -n <ns> --ignore-not-found`, then confirm
+  it's gone before re-applying — a leftover PVC can collide with the new clone.)
 - Console/serial: `kubectl virt console <name> -n <ns>` (interactive — only if
   the user explicitly wants a console session).
 - Never apply a manifest the user hasn't seen.
@@ -389,11 +551,33 @@ follow-up read confirms it. After running the mutation, in the SAME turn:
 Common create pitfalls to check for and report honestly (never silently "succeed"):
 - Root disk smaller than the source image's virtual size — PVC won't provision.
   Look up the image size first and ensure the requested disk is ≥ it.
-- An ISO/installer image (e.g. `*-live-server-*`, `*.iso`) used as a cloud-init
-  root disk — it boots an installer, cloud-init (user/password/SSH) does NOT
-  apply. For a cloud-init / SSH VM you need a CLOUD image (e.g. `*-cloudimg-*`).
+- An ISO/installer image (e.g. `*-live-server-*`, `*.iso`) cloned as the root
+  disk — the disk then contains the INSTALLER, not an OS. The VM boots into the
+  manual installer ("select your language"), and cloud-init (user/password/SSH)
+  is IGNORED. Worse, if that ISO-clone is the only disk, the installer reports
+  "Block probing did not discover any disks" because there is no separate blank
+  target disk. For a cloud-init / SSH VM you MUST use a CLOUD image (`*-cloudimg-*`,
+  a `.img`/qcow2), which is a ready OS. (If you genuinely must use an ISO, it is a
+  different shape: attach the ISO as a CD-ROM `cdrom: {bus: sata}` boot device AND
+  add a separate blank `harvester-longhorn` data disk as the install target, then
+  install manually — or build an autoinstall seed. Default to cloudimg instead.)
+- Wrong storage class on the root PVC — cloning an image requires the image's
+  OWN per-image `lh-*` storageClass (from `.status.storageClassName`), NOT the
+  default `harvester-longhorn`. Using the default class gives a BLANK disk (no OS
+  cloned), and pairing it with a bogus `claimName` like the image name yields
+  `ErrorPvcNotFound` / `PVC <image> does not exist` and a permanently
+  Unschedulable VM. Always read the per-image SC first and set the imageId
+  annotation on the volumeClaimTemplate.
+- Trying to CHANGE an existing VM's login/network by patching cloud-init and
+  restarting — cloud-init is first-boot-only, so the guest is unchanged. Recreate
+  instead (see the first-boot caveat under Networking). Symptom: console
+  `Login incorrect` for the user you thought you set.
+- Forgetting `networkData` (or omitting the `enp2s0` DHCP line) when a bridge NIC
+  is present — the bridge NIC comes up DOWN with no IP and is not SSH-able.
 - Bridge NAD with no `ipam` — the guest only gets a LAN IP via external DHCP; if
-  none is served the bridge NIC has no IP and is not SSH-able.
+  none is served the bridge NIC has no IP and is not SSH-able. (Conversely, if a
+  sibling VM on the same NAD DID get a `192.168.x.x` lease, DHCP works and the
+  problem is on the VM side — usually missing networkData or first-boot.)
 
 ## Output & communication style
 - Lead with the direct answer (the count or the list), then a short table.
@@ -440,10 +624,32 @@ Common create pitfalls to check for and report honestly (never silently "succeed
   or (b) recreate the VM WITHOUT the bridge NIC (pod-network only) for an
   internal-IP VM. Offer to stop the stuck VM (`kubectl virt stop` / runStrategy
   Halted) to end the retry loop — disk is preserved.
+- **Bridge NIC (e.g. `enp2s0`) is `state DOWN` / has no `inet` in the guest** —
+  the second NIC never got configured. ROOT CAUSE is almost always missing
+  cloud-init `networkData` (the VM `spec` may even look fine if it was patched
+  AFTER first boot — see the first-boot caveat). The RELIABLE fix is to recreate
+  the VM with `networkData` enabling DHCP on both NICs (or, if cloud-init is
+  already correct on disk, a full `reboot` which re-runs netplan natively). Manual
+  in-guest recovery is fragile on modern cloud images and often DOESN'T work:
+  - `sudo dhclient enp2s0` → `dhclient: command not found` on Ubuntu 24.04 cloudimg
+    (it ships systemd-networkd, not isc-dhcp-client).
+  - `sudo networkctl renew enp2s0` → `Interface enp2s0 is not managed by
+    systemd-networkd` (no netplan config exists for it yet).
+  - `sudo ip link set enp2s0 up` brings the LINK up (`state UP`) but still gives
+    NO IPv4 unless something then DHCPs it.
+  - Writing `/etc/netplan/99-lan.yaml` (`renderer: networkd`, `enp2s0: {dhcp4: true}`)
+    + `sudo systemctl enable --now systemd-networkd` + `sudo netplan apply` CAN work,
+    but it's brittle mid-session. Prefer recreate/reboot, which uses the native
+    cloud-init → netplan → networkd path that is known to lease an IP.
 - **Cannot verify right now (LLM rate limit / transient error mid-task)** — say
   exactly that: "couldn't verify the result yet (rate limited)". NEVER report
   status "from previous results" or from memory as if it were current — re-run the
-  `kubectl get` when able, and only then state the real state.
+  `kubectl get` when able, and only then state the real state. NOTE: a "rate limit"
+  message from the RantaiClaw tool layer (not the LLM API) usually means the
+  per-hour action budget (`autonomy.max_actions_per_hour`, default low) was hit —
+  a real, silent cap, not a cluster problem. It resets on daemon restart and the
+  operator can raise the limit in config; don't mistake it for a cluster fault and
+  don't use it as an excuse to skip a verify you CAN still run.
 - Empty result with rc=0 (only a header, no rows) — genuinely zero of that
   resource; say so plainly. (For VM images, never report 0 unless the command
   truly prints no data rows.)
