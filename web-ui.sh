@@ -1,19 +1,13 @@
 #!/usr/bin/env bash
-# Launch the NQRust web console — one command, from ANY directory, no git clone needed.
+# Launch the NQRust web console — one command, no git clone.
 #   nqrust-web         # fetch/update claw-ui (latest) + brand + start
 #   nqrust-web stop    # stop the console + gateway
+# Quiet by default; set NQRUST_VERBOSE=1 to see the full fetch/build output.
 #
-# The console (claw-ui) is NOT pinned: it follows upstream latest via `rantaiclaw ui
-# install`, which clones it (or pulls --ff-only) and auto-installs bun + deps. The
-# NQRust brand is layered on top each launch by scripts/apply-theme.sh (idempotent).
-# Compatibility between the binary and claw-ui is maintained upstream by RantAI.
-#
-# Layout (identical in the repo and when staged to ~/.nqrust by get.sh):
-#   <HERE>/web-ui.sh  <HERE>/scripts/apply-theme.sh  <HERE>/web-ui-theme/  <HERE>/VERSION
-# claw-ui itself is fetched to ~/.nqrust/web-ui (override with NQRUST_UI_DIR).
+# The NQRust brand is laid over upstream claw-ui each launch by scripts/apply-theme.sh
+# using files owned by this repo (web-ui-theme/) — no dependency on any upstream brand.
 set -euo pipefail
-# Resolve through symlinks: nqrust-web is symlinked into ~/.local/bin → ~/.nqrust/web-ui.sh,
-# so BASH_SOURCE is the symlink. Follow it so scripts/ + web-ui-theme/ + VERSION resolve.
+# Follow the symlink (nqrust-web → ~/.nqrust/web-ui.sh) so scripts/ + web-ui-theme/ resolve.
 SELF="${BASH_SOURCE[0]}"
 while [ -L "$SELF" ]; do
   _d="$(cd -P "$(dirname "$SELF")" && pwd)"; SELF="$(readlink "$SELF")"
@@ -22,72 +16,58 @@ done
 HERE="$(cd -P "$(dirname "$SELF")" && pwd)"
 UIDIR="${NQRUST_UI_DIR:-$HOME/.nqrust/web-ui}"
 PORT="${NQRUST_UI_PORT:-3939}"
+VERBOSE="${NQRUST_VERBOSE:-0}"
+LOG="$HOME/.nqrust/nqrust-web.log"
 REPO="NexusQuantum/NQRust-Infra-AI"
 
 say() { printf '%s\n' "$*"; }
 warn() { printf '⚠ %s\n' "$*" >&2; }
-# True if something is listening on 127.0.0.1:$1 (bash /dev/tcp — no nc/ss needed).
+# Run quietly (output → log) unless NQRUST_VERBOSE=1.
+q() { if [ "$VERBOSE" = 1 ]; then "$@"; else "$@" >>"$LOG" 2>&1; fi; }
 port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3>&- 3<&-; return 0; }; return 1; }
 
 case "${1:-up}" in
-  stop) say "→ stopping NQRust console…"; rantaiclaw ui stop --dir "$UIDIR"; exit 0 ;;
+  stop) rantaiclaw ui stop --dir "$UIDIR" >/dev/null 2>&1 && say "✓ stopped" || say "nothing to stop"; exit 0 ;;
   up|"") ;;
   *) say "usage: $0 [up|stop]"; exit 2 ;;
 esac
 
-# --- tooling -------------------------------------------------------------------
-command -v rantaiclaw >/dev/null 2>&1 || {
-  warn "rantaiclaw not on PATH — open a new terminal or add ~/.local/bin to PATH"; exit 1; }
-command -v git >/dev/null 2>&1 || {
-  warn "git is required to fetch the web console — install git and retry"; exit 1; }
-command -v bun >/dev/null 2>&1 || command -v npm >/dev/null 2>&1 || \
-  say "! no bun/npm found — rantaiclaw will try to auto-install bun (needs curl + unzip)"
+command -v rantaiclaw >/dev/null 2>&1 || { warn "rantaiclaw not on PATH — open a new terminal"; exit 1; }
+command -v git >/dev/null 2>&1 || { warn "git is required — install git and retry"; exit 1; }
 
-say "NQRust-Infra-AI · web console"
-say "  rantaiclaw $(rantaiclaw --version 2>/dev/null | awk '{print $2}')"
+mkdir -p "$HOME/.nqrust"; : >"$LOG"
+say "NQRust web console (rantaiclaw $(rantaiclaw --version 2>/dev/null | awk '{print $2}'))"
 
-# --- update notice (best-effort; never blocks) --------------------------------
+# update notice (best-effort, 1 line)
 if command -v curl >/dev/null 2>&1; then
   INST="$(grep -m1 '^bundle=' "$HERE/VERSION" 2>/dev/null | cut -d= -f2 || true)"
   LATEST="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##' || true)"
-  if [ -n "$INST" ] && [ -n "$LATEST" ] && [ "$INST" != "$LATEST" ] && \
-     [ "$(printf '%s\n%s\n' "$INST" "$LATEST" | sort -V | tail -1)" = "$LATEST" ]; then
-    say "  ↑ NQRust $LATEST tersedia (terpasang $INST) — perbarui dengan: nqrust-update"
-  fi
+  [ -n "$INST" ] && [ -n "$LATEST" ] && [ "$INST" != "$LATEST" ] && \
+    [ "$(printf '%s\n%s\n' "$INST" "$LATEST" | sort -V | tail -1)" = "$LATEST" ] && \
+    say "  ↑ $LATEST tersedia — jalankan: nqrust-update" || true
 fi
 
-# --- 1. fetch / update claw-ui (follow latest) --------------------------------
-# Our skin edits tracked files in the checkout; revert them first so `ui install`'s
-# `git pull --ff-only` runs on a clean tree (otherwise the 2nd launch fails).
-if [ -d "$UIDIR/.git" ]; then
-  git -C "$UIDIR" checkout -- . 2>/dev/null || true
-fi
-say "→ fetching / updating console (claw-ui, latest)…"
-rantaiclaw ui install --dir "$UIDIR"
-say "  claw-ui @ $(git -C "$UIDIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+# fetch / update claw-ui (revert our skin edits first so ff-pull stays clean)
+[ -d "$UIDIR/.git" ] && git -C "$UIDIR" checkout -- . >/dev/null 2>&1 || true
+[ -d "$UIDIR/node_modules" ] || say "→ preparing console (first run: fetch + install, ~1 min)…"
+q rantaiclaw ui install --dir "$UIDIR" || { warn "fetch failed — see $LOG"; exit 1; }
 
-# --- 2. layer the NQRust brand (warn + continue if upstream shifted) ----------
-bash "$HERE/scripts/apply-theme.sh" "$UIDIR" || true
+# lay on the NQRust brand (stdout→log; warnings still surface on stderr)
+bash "$HERE/scripts/apply-theme.sh" "$UIDIR" >>"$LOG" || true
 
-# --- 3. take over :$PORT if another console is already serving there ----------
-# `rantaiclaw ui start` no-ops when the port is busy, so an existing (e.g. upstream-
-# branded) console on this port would keep showing instead of our themed one.
+# take over the port if another console holds it (ui start no-ops on a busy port)
 if port_busy "$PORT"; then
-  warn "a console is already running on :$PORT — taking it over for the NQRust-branded one"
-  rantaiclaw ui stop >/dev/null 2>&1 || true            # default dir (~/.rantaiclaw/ui)
+  say "→ taking over :$PORT from an existing console…"
+  rantaiclaw ui stop >/dev/null 2>&1 || true
   rantaiclaw ui stop --dir "$UIDIR" >/dev/null 2>&1 || true
   for _ in 1 2 3 4 5; do port_busy "$PORT" || break; sleep 1; done
-  if port_busy "$PORT"; then                            # still up → free the port directly
+  if port_busy "$PORT"; then
     if command -v fuser >/dev/null 2>&1; then fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
-    elif command -v lsof  >/dev/null 2>&1; then kill $(lsof -ti "tcp:${PORT}" 2>/dev/null) 2>/dev/null || true
-    fi
+    elif command -v lsof  >/dev/null 2>&1; then kill $(lsof -ti "tcp:${PORT}" 2>/dev/null) 2>/dev/null || true; fi
     for _ in 1 2 3 4 5; do port_busy "$PORT" || break; sleep 1; done
   fi
-  port_busy "$PORT" && warn "could not free :$PORT — stop the other console, then re-run nqrust-web" || true
+  port_busy "$PORT" && { warn "could not free :$PORT — stop the other console, then re-run"; exit 1; } || true
 fi
 
-# --- 4. start -----------------------------------------------------------------
-say "→ starting console + gateway…"
-rantaiclaw ui start --dir "$UIDIR" --port "$PORT"
-say ""
-say "✓ NQRust console → http://localhost:3939     (stop with:  $0 stop)"
+q rantaiclaw ui start --dir "$UIDIR" --port "$PORT" || { warn "start failed — see $LOG"; exit 1; }
+say "✓ NQRust console → http://localhost:$PORT   (stop: nqrust-web stop)"
