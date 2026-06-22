@@ -1,54 +1,73 @@
 #!/usr/bin/env bash
-# Launch the NQRust web console — one command, from ANY directory.
-#   ./web-ui.sh        # fetch (if needed) + brand + install deps + start
-#   ./web-ui.sh stop   # stop the console + gateway
+# Launch the NQRust web console — one command, no git clone.
+#   nqrust-web         # fetch/update claw-ui (latest) + brand + start
+#   nqrust-web stop    # stop the console + gateway
+# Quiet by default; set NQRUST_VERBOSE=1 to see the full fetch/build output.
 #
-# Resolves the repo root absolutely and passes an absolute --dir to `rantaiclaw ui start`,
-# so it never lands on the wrong path (e.g. web-ui/web-ui) regardless of your current dir.
-# It also avoids `rantaiclaw ui install`, which fetches the plain upstream console into
-# ~/.rantaiclaw/ui instead of your NQRust-branded web-ui/.
+# The NQRust brand is laid over upstream claw-ui each launch by scripts/apply-theme.sh
+# using files owned by this repo (web-ui-theme/) — no dependency on any upstream brand.
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WEBUI="$HERE/web-ui"
+# Follow the symlink (nqrust-web → ~/.nqrust/web-ui.sh) so scripts/ + web-ui-theme/ resolve.
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+  _d="$(cd -P "$(dirname "$SELF")" && pwd)"; SELF="$(readlink "$SELF")"
+  case "$SELF" in /*) ;; *) SELF="$_d/$SELF" ;; esac
+done
+HERE="$(cd -P "$(dirname "$SELF")" && pwd)"
+UIDIR="${NQRUST_UI_DIR:-$HOME/.nqrust/web-ui}"
+PORT="${NQRUST_UI_PORT:-3939}"
+VERBOSE="${NQRUST_VERBOSE:-0}"
+LOG="$HOME/.nqrust/nqrust-web.log"
+REPO="NexusQuantum/NQRust-Infra-AI"
 
 say() { printf '%s\n' "$*"; }
+warn() { printf '⚠ %s\n' "$*" >&2; }
+# Run quietly (output → log) unless NQRUST_VERBOSE=1.
+q() { if [ "$VERBOSE" = 1 ]; then "$@"; else "$@" >>"$LOG" 2>&1; fi; }
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3>&- 3<&-; return 0; }; return 1; }
 
 case "${1:-up}" in
-  stop) say "→ stopping NQRust console…"; rantaiclaw ui stop --dir "$WEBUI"; exit 0 ;;
+  stop) rantaiclaw ui stop --dir "$UIDIR" >/dev/null 2>&1 && say "✓ stopped" || say "nothing to stop"; exit 0 ;;
   up|"") ;;
   *) say "usage: $0 [up|stop]"; exit 2 ;;
 esac
 
-say "NQRust-Infra-AI · web console"
-say ""
+command -v rantaiclaw >/dev/null 2>&1 || { warn "rantaiclaw not on PATH — open a new terminal"; exit 1; }
+command -v git >/dev/null 2>&1 || { warn "git is required — install git and retry"; exit 1; }
 
-# tooling
-command -v rantaiclaw >/dev/null 2>&1 || {
-  say "✗ rantaiclaw not on PATH — run:  source ~/.cargo/env   (or open a new terminal)"; exit 1; }
-command -v bun >/dev/null 2>&1 || command -v npm >/dev/null 2>&1 || {
-  say "✗ need a JavaScript runtime — install bun (https://bun.sh) or npm"; exit 1; }
+mkdir -p "$HOME/.nqrust"; : >"$LOG"
+say "NQRust web console (rantaiclaw $(rantaiclaw --version 2>/dev/null | awk '{print $2}'))"
 
-# 1. fetch the console submodule if it isn't checked out yet
-if [ ! -d "$WEBUI/src" ]; then
-  say "→ fetching web-ui…"
-  git -C "$HERE" submodule update --init web-ui >/dev/null 2>&1
+# update notice (best-effort, 1 line)
+if command -v curl >/dev/null 2>&1; then
+  INST="$(grep -m1 '^bundle=' "$HERE/VERSION" 2>/dev/null | cut -d= -f2 || true)"
+  LATEST="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##' || true)"
+  [ -n "$INST" ] && [ -n "$LATEST" ] && [ "$INST" != "$LATEST" ] && \
+    [ "$(printf '%s\n%s\n' "$INST" "$LATEST" | sort -V | tail -1)" = "$LATEST" ] && \
+    say "  ↑ $LATEST tersedia — jalankan: nqrust-update" || true
 fi
 
-# 2. layer the NQRust brand on top of upstream (idempotent)
-bash "$HERE/scripts/apply-theme.sh" "$WEBUI" >/dev/null
-say "✓ NQRust brand applied"
+# fetch / update claw-ui (revert our skin edits first so ff-pull stays clean)
+[ -d "$UIDIR/.git" ] && git -C "$UIDIR" checkout -- . >/dev/null 2>&1 || true
+[ -d "$UIDIR/node_modules" ] || say "→ preparing console (first run: fetch + install, ~1 min)…"
+q rantaiclaw ui install --dir "$UIDIR" || { warn "fetch failed — see $LOG"; exit 1; }
 
-# 3. install deps if missing
-if [ ! -d "$WEBUI/node_modules" ]; then
-  say "→ installing console deps…"
-  if command -v bun >/dev/null 2>&1; then (cd "$WEBUI" && bun install >/dev/null); else (cd "$WEBUI" && npm install >/dev/null); fi
-  say "✓ deps installed"
-else
-  say "✓ deps present"
+# lay on the NQRust brand (stdout→log; warnings still surface on stderr)
+bash "$HERE/scripts/apply-theme.sh" "$UIDIR" >>"$LOG" || true
+
+# take over the port if another console holds it (ui start no-ops on a busy port)
+if port_busy "$PORT"; then
+  say "→ taking over :$PORT from an existing console…"
+  rantaiclaw ui stop >/dev/null 2>&1 || true
+  rantaiclaw ui stop --dir "$UIDIR" >/dev/null 2>&1 || true
+  for _ in 1 2 3 4 5; do port_busy "$PORT" || break; sleep 1; done
+  if port_busy "$PORT"; then
+    if command -v fuser >/dev/null 2>&1; then fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
+    elif command -v lsof  >/dev/null 2>&1; then kill $(lsof -ti "tcp:${PORT}" 2>/dev/null) 2>/dev/null || true; fi
+    for _ in 1 2 3 4 5; do port_busy "$PORT" || break; sleep 1; done
+  fi
+  port_busy "$PORT" && { warn "could not free :$PORT — stop the other console, then re-run"; exit 1; } || true
 fi
 
-# 4. start — absolute --dir, so the current directory never matters
-say "→ starting console + gateway…"
-rantaiclaw ui start --dir "$WEBUI"
-say ""
-say "✓ NQRust console → http://localhost:3939     (stop with:  $0 stop)"
+q rantaiclaw ui start --dir "$UIDIR" --port "$PORT" || { warn "start failed — see $LOG"; exit 1; }
+say "✓ NQRust console → http://localhost:$PORT   (stop: nqrust-web stop)"

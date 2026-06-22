@@ -12,7 +12,9 @@
 set -eu
 # pipefail is a bash/zsh feature — enable it only where supported (no-op on dash).
 (set -o pipefail) 2>/dev/null && set -o pipefail || true
-say() { printf '%s\n' "$*"; }
+# Quiet mode (NQR_QUIET=1) silences the ✓ progress lines — used by `nqrust-update`.
+QUIET="${NQR_QUIET:-0}"
+say() { [ "$QUIET" = 1 ] || printf '%s\n' "$*"; }
 die() { printf '✗ %s\n' "$*" >&2; exit 1; }
 
 REPO="NexusQuantum/NQRust-Infra-AI"
@@ -38,7 +40,11 @@ URL="https://github.com/$REPO/releases/download/$TAG/$ASSET"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 say "→ downloading $ASSET …"
-curl -fSL --progress-bar -o "$TMP/b.tar.gz" "$URL" || die "download failed: $URL"
+if [ "$QUIET" = 1 ]; then
+  curl -fsSL -o "$TMP/b.tar.gz" "$URL" || die "download failed: $URL"
+else
+  curl -fSL --progress-bar -o "$TMP/b.tar.gz" "$URL" || die "download failed: $URL"
+fi
 
 # verify the checksum if the sidecar is published
 if curl -fsSL -o "$TMP/b.sha256" "$URL.sha256" 2>/dev/null; then
@@ -87,15 +93,42 @@ for d in "$BDIR"/skill/*/; do
 done
 say "✓ skills deployed → $SK"
 
-PATHHINT=""; case ":$PATH:" in *":$DEST:"*) ;; *) PATHHINT="export PATH=\"$DEST:\$PATH\"; ";; esac
-cat <<EOF
+# stage the web console (launcher + theme) so the browser UI works WITHOUT a git clone.
+# This is lazy: no heavy fetch here — the first `nqrust-web` run clones claw-ui + installs deps.
+if [ -f "$BDIR/web-ui.sh" ]; then
+  command -v git >/dev/null 2>&1 || say "! git not found — needed by the web console (nqrust-web). Install git."
+  NQDIR="$HOME/.nqrust"
+  mkdir -p "$NQDIR/scripts"
+  cp "$BDIR/web-ui.sh" "$NQDIR/web-ui.sh"
+  cp "$BDIR/scripts/apply-theme.sh" "$NQDIR/scripts/apply-theme.sh"
+  rm -rf "$NQDIR/web-ui-theme"; cp -r "$BDIR/web-ui-theme" "$NQDIR/web-ui-theme"
+  [ -f "$BDIR/VERSION" ] && cp "$BDIR/VERSION" "$NQDIR/VERSION"
+  chmod +x "$NQDIR/web-ui.sh" "$NQDIR/scripts/apply-theme.sh"
+  ln -sf "$NQDIR/web-ui.sh" "$DEST/nqrust-web"
+  cat > "$DEST/nqrust-update" <<'UPD'
+#!/usr/bin/env sh
+# Update NQRust to the latest: bundle (skills + web console + bundled binary) AND the
+# rantaiclaw binary (latest upstream release you publish). Quiet — only essentials.
+set -e
+printf '→ updating NQRust…\n'
+curl -fsSL https://raw.githubusercontent.com/NexusQuantum/NQRust-Infra-AI/master/get.sh | NQR_QUIET=1 sh
+if command -v rantaiclaw >/dev/null 2>&1; then
+  before="$(rantaiclaw --version 2>/dev/null | awk '{print $2}')"
+  rantaiclaw update --yes >/dev/null 2>&1 || true
+  after="$(rantaiclaw --version 2>/dev/null | awk '{print $2}')"
+  if [ "$before" != "$after" ]; then printf '✓ rantaiclaw %s → %s\n' "$before" "$after"
+  else printf '✓ rantaiclaw %s (latest)\n' "$after"; fi
+fi
+printf '✓ NQRust up to date\n'
+UPD
+  chmod +x "$DEST/nqrust-update"
+  say "✓ web console ready → run: nqrust-web"
+fi
 
-Ready. Next:
-  1) ${PATHHINT}configure your LLM provider/key:   rantaiclaw onboard   (or export OPENROUTER_API_KEY=…)
-  2) start the agent:                              rantaiclaw chat
-  3) ask it, e.g.:
-       Install nqrust-microvm on 10.0.0.5 over SSH (user ubuntu, password '…').
-       Minimal, NAT. Drive to completion; I'll reply "continue".
-     After install:  on 10.0.0.5 create a microVM named web, 2 vCPU 1GB, start it
-  4) browser UI?  git clone the repo, then run ./web-ui.sh   (NQRust web console)
-EOF
+PATHHINT=""; case ":$PATH:" in *":$DEST:"*) ;; *) PATHHINT="export PATH=\"$DEST:\$PATH\";  ";; esac
+say ""
+say "Ready:"
+say "  ${PATHHINT}rantaiclaw onboard      # set LLM provider/key (once)"
+say "  rantaiclaw chat                    # CLI agent"
+say "  nqrust-web                         # web console → http://localhost:3939"
+say "  nqrust-update                      # update everything later"

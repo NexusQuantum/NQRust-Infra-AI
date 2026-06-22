@@ -43,6 +43,12 @@ for d in "$REPO"/skill/*/; do
 done
 rm -rf "$STAGE/skill/nqrust-microvm-operate/.nqrust-src"
 
+# web console: launcher + theme overlay (claw-ui itself is fetched on demand by nqrust-web)
+install -m755 "$REPO/web-ui.sh" "$STAGE/web-ui.sh"
+mkdir -p "$STAGE/scripts"
+install -m755 "$REPO/scripts/apply-theme.sh" "$STAGE/scripts/apply-theme.sh"
+cp -r "$REPO/web-ui-theme" "$STAGE/web-ui-theme"
+
 # setup + docs
 install -m755 "$HERE/files/setup.sh" "$STAGE/setup.sh"
 cp "$HERE/files/QUICKSTART.md" "$STAGE/QUICKSTART.md"
