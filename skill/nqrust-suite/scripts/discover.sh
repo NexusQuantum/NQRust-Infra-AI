@@ -44,12 +44,24 @@ else
 fi
 
 # --- connectivity (airgap detection) -----------------------------------------
-if has curl && curl -fsS --max-time 5 https://ghcr.io/v2/ >/dev/null 2>&1; then
-  emit GHCR_REACHABLE yes
-elif has curl && curl -fsS --max-time 5 https://github.com >/dev/null 2>&1; then
-  emit GHCR_REACHABLE partial   # github ok, registry probe failed
+# IMPORTANT: probe by HTTP STATUS, not by curl's exit code. `https://ghcr.io/v2/`
+# ALWAYS returns 401 (it demands a token) — that is a HEALTHY, REACHABLE registry,
+# not a failure. Using `curl -f` here is a bug: -f makes 401 a non-zero exit, so a
+# perfectly reachable GHCR looks "partial/no" and the agent wrongly concludes
+# "airgapped / no internet". Treat ANY HTTP response (esp. 401/200) as reachable;
+# only a connect/DNS/timeout failure (empty code) means not reachable.
+if has curl; then
+  GHCR_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://ghcr.io/v2/ 2>/dev/null)"
+  emit GHCR_HTTP "${GHCR_CODE:-000}"   # 401 = normal (auth required); 200 = also fine
+  if [ "${GHCR_CODE:-000}" != "000" ] && [ -n "${GHCR_CODE:-}" ]; then
+    emit GHCR_REACHABLE yes            # got an HTTP reply → registry is reachable
+  elif curl -sS -o /dev/null --max-time 8 https://github.com >/dev/null 2>&1; then
+    emit GHCR_REACHABLE partial        # github ok, ghcr probe got no reply
+  else
+    emit GHCR_REACHABLE no             # no HTTP at all → likely airgapped
+  fi
 else
-  emit GHCR_REACHABLE no        # likely airgapped → recommend airgapped install
+  emit GHCR_REACHABLE unknown          # no curl to probe with
 fi
 
 # --- product binaries already installed? -------------------------------------

@@ -168,3 +168,26 @@ cluster's real state** — always re-read with `kubectl` (or `scripts/verify-vm.
   spec.runStrategy instead`.
 - Fix: cosmetic — the VM still applies. Use `spec.runStrategy: RerunOnFailure`
   (or `Always`) in new manifests; `Halted` ↔ `RerunOnFailure` to stop/start.
+
+## G. Storage health (Longhorn)
+
+### G1. Longhorn volumes `degraded` + `VolumeResizeFailed` on a single-node cluster
+- Symptom: `kubectl get volumes.longhorn.io -n longhorn-system` shows volumes
+  `attached degraded` (and some `detached unknown`); PVC resize fails with
+  `cannot expand volume before replica scheduling success` (a `VolumeResizeFailed`
+  event). VMs still run, but data redundancy is gone and resizes are blocked.
+- Root cause: Longhorn `default-replica-count = 3` (the default) but the cluster has
+  only ONE schedulable node. 3 replicas can never be placed on 1 node → every volume
+  is permanently `degraded`, and resize is blocked until replicas schedule.
+  Confirm: `kubectl get settings.longhorn.io default-replica-count -n longhorn-system -o jsonpath='{.value}'`
+  (=3), `kubectl get nodes.longhorn.io -n longhorn-system` (1 node), and per-volume
+  `kubectl get volumes.longhorn.io <vol> -n longhorn-system -o jsonpath='{.spec.numberOfReplicas} {.status.robustness}'`.
+- Fix (single-node mode): set replica count to 1.
+  - New volumes: `kubectl patch settings.longhorn.io default-replica-count -n longhorn-system --type merge -p '{"value":"1"}'`.
+  - Existing degraded volumes: `kubectl patch volumes.longhorn.io <vol> -n longhorn-system --type merge -p '{"spec":{"numberOfReplicas":1}}'` (repeat per volume) → they become `healthy`, then resize works.
+  - This is a STORAGE mutation — state the impact (redundancy stays 1 until more nodes
+    are added) and CONFIRM with the user before patching. The real long-term fix for
+    redundancy is adding nodes; replica=1 is the correct setting for an intentional
+    single-node setup.
+  - After fixing, re-check `kubectl get volumes.longhorn.io -n longhorn-system` —
+    don't claim healthy without re-reading.

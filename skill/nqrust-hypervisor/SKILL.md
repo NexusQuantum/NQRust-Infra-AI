@@ -1,7 +1,7 @@
 ---
 name: nqrust-hypervisor
 description: Operate a Hypervisor HCI cluster — i.e. Harvester (the backend is Harvester; the UI is re-skinned as "Hypervisor", so "Hypervisor" and "Harvester" mean the same system) — covering KubeVirt VMs/VMIs, Longhorn storage, VM images, networks, backups, templates, and nodes, from natural language by driving `kubectl` against the cluster via the user-provided kubeconfig (the only communication channel). Triggers on "Hypervisor" OR "Harvester" or anything about this cluster's VMs/storage/networks. Always presents the system as "Hypervisor" (never says "Harvester") while keeping real harvesterhci.io identifiers in commands. Discovers cluster facts at runtime (never from memory) and verifies every mutation with a follow-up read. Requires `kubectl` locally and a Hypervisor kubeconfig in the RantaiClaw workspace.
-version: 0.4.0
+version: 0.7.0
 tags: [hypervisor, harvester, hci, kubevirt, longhorn, kubectl, operations, day2]
 ---
 
@@ -20,6 +20,30 @@ The cluster is whatever the configured kubeconfig points to — do NOT assume a 
 hostname. The API server address, node names, and versions can change between
 environments; always discover them at runtime (see "Discover the cluster" below) instead
 of hardcoding them.
+
+## Data center assistant scope (answer broadly — facts AND knowledge)
+Act as a full **data center / infrastructure assistant** for this Hypervisor platform, not
+just a VM-create tool. Two kinds of questions, handled differently:
+
+- **LIVE-STATE questions** ("how many VMs / what's the IP / is storage healthy / how much
+  RAM is free / what networks exist") → these are FACTS about THIS cluster. Run `kubectl`
+  this turn and answer from real output (Golden Rule 1). Covers compute (VMs/nodes),
+  storage (Longhorn volumes, PVCs, disk capacity), networking (NADs, cluster networks,
+  VLANs), images, backups/snapshots, templates, events/health, and capacity.
+- **CONCEPTUAL / HOW-TO / ADVICE questions** ("what is Longhorn / VLAN vs VXLAN / how does
+  KubeVirt live-migration work / best practice for VM backups / why use a bridge NIC /
+  how should I size a node") → you CAN and SHOULD answer these from your own knowledge.
+  They don't need kubectl. Be accurate and practical; if the answer depends on this
+  cluster's actual config, ALSO run the relevant `kubectl` to ground it (e.g. "best
+  replica count?" → explain the concept AND check `default-replica-count` + node count).
+
+**Scope honesty:** you operate THIS Hypervisor/Harvester cluster via its kubeconfig. For
+data-center questions BEYOND it (physical hardware you can't see, office/LAN gear, other
+servers, switches, power/cooling), answer helpfully from general knowledge but be HONEST
+about the boundary — say plainly when something is outside the cluster you manage and
+therefore can't be verified with kubectl (don't fabricate facts about hardware you can't
+observe). Offer what you CAN check (e.g. node hardware via `kubectl get nodes -o wide` /
+`.status.nodeInfo`) versus what needs the user/physical access.
 
 ## Tools
 - name: shell
@@ -52,9 +76,12 @@ first-boot-only cloud-init, networkData for the bridge NIC, proving SSH). Prefer
 running the script over re-deriving the commands by hand.
 
 ## GOLDEN RULES (read first, every time)
-1. NEVER answer a Hypervisor question from memory, assumption, or a "plausible"
-   guess. ALWAYS run the relevant `kubectl` command THIS turn and base the
-   answer ONLY on its real stdout.
+1. For any question about the STATE of THIS cluster (counts, names, IPs, statuses,
+   health, capacity, "is X running", "how many Y") — NEVER answer from memory,
+   assumption, or a "plausible" guess. ALWAYS run the relevant `kubectl` command
+   THIS turn and base the answer ONLY on its real stdout. (This rule is about live
+   FACTS — see "Data center assistant scope" for conceptual/how-to questions, which
+   you CAN answer from knowledge.)
 2. NEVER invent resource names, IPs, counts, specs, or statuses. If you did not
    see it in command output this turn, you do not know it. Made-up VM names like
    "server-dev-001" or fake IPs are a critical failure.
@@ -145,6 +172,23 @@ never type a remembered IP:
 - Versions:        `kubectl version -o yaml | grep -i gitVersion` and
                    `kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.osImage}{"\n"}'`
 
+## Capacity planning ("how many more VMs can I create?")
+A common ask. Answer from LIVE numbers, show the math, and be honest about the
+bottleneck. Steps:
+1. Per-node capacity & allocatable:
+   `kubectl get nodes -o custom-columns='NODE:.metadata.name,CPU:.status.allocatable.cpu,MEM:.status.allocatable.memory,PODS:.status.allocatable.pods'`
+2. Current real usage (needs metrics-server; if absent, say so and fall back to requests):
+   `kubectl top nodes`
+3. Sum what existing VMs request (the real reservation):
+   `kubectl get vmi -A -o jsonpath='{range .items[*]}{.metadata.name}{" cpu="}{.spec.domain.cpu.cores}{" mem="}{.spec.domain.memory.guest}{"\n"}{end}'`
+4. Compute headroom = allocatable − used, then divide by the target VM spec the user
+   asked for (e.g. 2 vCPU / 4Gi). **Report BOTH limits** (CPU-bound vs RAM-bound) and
+   state which runs out first — that's the real answer. Example phrasing: "RAM is the
+   bottleneck: ~9Gi free ÷ 4Gi ≈ 2 more VMs; CPU would allow more but RAM caps it."
+5. Caveats to mention honestly: KubeVirt also needs overhead per VM (~200–500Mi);
+   single-node has no failover headroom; don't promise a number the node can't sustain.
+   Never invent a capacity figure — base it on the commands above THIS turn.
+
 ## Installing / rotating a kubeconfig (when given a new one)
 When the user hands you a new kubeconfig (downloaded from Rancher/Hypervisor UI →
 cluster → "Download KubeConfig"), follow these steps exactly:
@@ -174,8 +218,19 @@ Resource short names in parentheses.
 
 - Nodes & health:
   - `kubectl get nodes -o wide`
+  - `kubectl get node <name> -o jsonpath='{.status.conditions}'`  # MemoryPressure/DiskPressure/PIDPressure/Ready
   - `kubectl get hrq -A`           # Hypervisor ResourceQuota
   - `kubectl get settings.harvesterhci.io`
+  - System pods health (control plane / Longhorn / monitoring):
+    `kubectl get pods -A | grep -ivE 'Running|Completed'`   # anything NOT healthy
+- Monitoring stack (Hypervisor CAN ship Prometheus + Grafana under `cattle-monitoring-system`,
+  but it's an optional addon — may be absent on a minimal install):
+  - `kubectl get pods -n cattle-monitoring-system`   # `No resources found` = monitoring addon
+    not enabled (state that plainly; don't claim Grafana exists). Pods present = it's up.
+  - When present, Grafana/Prometheus are in-cluster; for dashboards point the user to the
+    Hypervisor UI (Monitoring). You read live numbers via `kubectl top` / the resource queries
+    here, NOT by scraping Grafana. If `kubectl top` returns no data, metrics-server/monitoring
+    may be down/absent — check the pods and say so rather than guessing usage.
 - VM images (vmimage/vmimages):
   - `kubectl get virtualmachineimages.harvesterhci.io -A`
 - Virtual machines (vm/vms):
@@ -186,9 +241,15 @@ Resource short names in parentheses.
 - VM templates: `kubectl get vmtemplate -A` / `kubectl get vmtemplateversion -A`
 - Storage / volumes:
   - `kubectl get pvc -A`
-  - `kubectl get volumes.longhorn.io -n longhorn-system`         # (lhv)
+  - `kubectl get volumes.longhorn.io -n longhorn-system -o custom-columns='NAME:.metadata.name,STATE:.status.state,ROBUSTNESS:.status.robustness'`  # (lhv) — health: robustness should be "healthy", not "degraded" (see pitfalls.md G1 for the single-node replica=3 issue)
   - `kubectl get backingimages.longhorn.io -n longhorn-system`   # (lhbi)
   - `kubectl get sc`                                             # storage classes (per-image lh-* classes)
+  - Storage CAPACITY (how much disk total/used/free in the data center):
+    - Per-node Longhorn disk space (the real cluster storage pool):
+      `kubectl get nodes.longhorn.io -n longhorn-system -o json | jq -r '.items[] | .metadata.name as $n | .status.diskStatus | to_entries[] | "\($n) avail=\(.value.storageAvailable) max=\(.value.storageMaximum) scheduled=\(.value.storageScheduled)"'`
+      (bytes; if `jq` absent, `kubectl get nodes.longhorn.io -n longhorn-system -o yaml | grep -iE 'storageAvailable|storageMaximum'`)
+    - Quick PVC total: `kubectl get pvc -A -o jsonpath='{range .items[*]}{.spec.resources.requests.storage}{"\n"}{end}'` then sum.
+    - Report total / used / free in GB and flag if a node disk is near full (Longhorn stops scheduling replicas past a reserved threshold).
 - Backups / snapshots:
   - `kubectl get vmbackup -A` ; `kubectl get vmrestore -A`
   - `kubectl get snapshots.longhorn.io -n longhorn-system`
@@ -561,6 +622,15 @@ Common create pitfalls to check for and report honestly (never silently "succeed
   different shape: attach the ISO as a CD-ROM `cdrom: {bus: sata}` boot device AND
   add a separate blank `harvester-longhorn` data disk as the install target, then
   install manually — or build an autoinstall seed. Default to cloudimg instead.)
+  **CRITICAL for the ISO path — boot order after install:** during install the
+  CD-ROM must boot first (`bootOrder: 1`) and the blank target disk second
+  (`bootOrder: 2`). But ONCE the OS is installed, leaving the CD-ROM at
+  `bootOrder: 1` makes the VM boot back into the INSTALLER on every reboot (there
+  is no UI "eject" button in KubeVirt/Hypervisor). After install you MUST flip the
+  order so the OS disk boots first — set the installed disk to `bootOrder: 1` and
+  the CD-ROM to `bootOrder: 2` (or detach the CD-ROM volume entirely), then restart.
+  Tell the user this up front when creating an ISO VM, and offer to flip it for them
+  after they finish installing.
 - Wrong storage class on the root PVC — cloning an image requires the image's
   OWN per-image `lh-*` storageClass (from `.status.storageClassName`), NOT the
   default `harvester-longhorn`. Using the default class gives a BLANK disk (no OS
@@ -650,6 +720,17 @@ Common create pitfalls to check for and report honestly (never silently "succeed
   a real, silent cap, not a cluster problem. It resets on daemon restart and the
   operator can raise the limit in config; don't mistake it for a cluster fault and
   don't use it as an excuse to skip a verify you CAN still run.
+- **VM boots back into the INSTALLER on every reboot (after the OS was already
+  installed from an ISO).** Root cause: the CD-ROM (ISO) still has `bootOrder: 1`,
+  above the installed OS disk — so the VM keeps booting the installer instead of the
+  OS. There is NO "eject CD" button in KubeVirt/Hypervisor; the fix is boot order.
+  Diagnose:
+  `kubectl get vm <name> -n <ns> -o jsonpath='{range .spec.template.spec.domain.devices.disks[*]}{.name}{" cdrom="}{.cdrom.bus}{" bootOrder="}{.bootOrder}{"\n"}{end}'`
+  — if the `cdrom` disk has the lowest bootOrder, that's it. Fix: flip the order so the
+  installed disk is `bootOrder: 1` and the CD-ROM is `bootOrder: 2` (a `kubectl patch`
+  on `/spec/template/spec/domain/devices/disks`), or detach the CD-ROM volume, then
+  restart the VM. Verify from the console that it now reaches the OS login, not the
+  installer. (Confirm with the user first — it restarts the VM.)
 - Empty result with rc=0 (only a header, no rows) — genuinely zero of that
   resource; say so plainly. (For VM images, never report 0 unless the command
   truly prints no data rows.)

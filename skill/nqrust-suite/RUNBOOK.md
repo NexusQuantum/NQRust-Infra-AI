@@ -95,6 +95,48 @@ causes: `nqrust-identity-db` not healthy yet (wait/retry), wrong `KEYCLOAK_DB_*`
 Confirm `nqrust-traefik` is running and the `traefik/dynamic.yml` mounted. Check the entrypoints:
 portal on 443 (host `PORTAL_PORT`), identity on 8444 (host `IDENTITY_PORT`). `logs.sh nqrust-traefik`.
 
+### Analytics install fails at the end: "Docker Compose up failed" / `analytics-northwind-db-1 is unhealthy` / UI never starts (port 3000 dead)
+**Symptom:** the installer pulls images and starts most services, then fails with
+`dependency northwind-db failed to start` / `container analytics-northwind-db-1 is unhealthy`.
+`docker ps -a` shows `analytics-ui` (and `analytics-db-init`) stuck in `Created`, so
+`http://<host>:3000` refuses connections.
+**Root cause (seen on a fresh VM):** the DB init SQL files the compose mounts read-only into
+postgres are mode **0600** (owned by the install user), e.g.
+`./00-init-analytics-db.sql:/docker-entrypoint-initdb.d/00-init-analytics-db.sql:ro`. Postgres
+runs as a DIFFERENT uid inside the container and gets `psql: error: …: Permission denied` reading
+them, so DB init fails and dependents never come up. Check the postgres logs:
+`docker logs analytics-northwind-db-1 2>&1 | grep -i denied`.
+**Fix:** make the mounted init files world-readable, then recreate the DB volume so init re-runs
+(postgres SKIPS init if the data dir already exists — fixing perms alone is not enough). In the
+stack dir (where `docker-compose.yaml` lives, e.g. `/home/<user>`):
+```
+chmod 644 00-init-analytics-db.sql northwind.sql scripts/ensure-analytics-db.sh
+sudo docker compose down
+sudo docker volume ls | grep -i northwind          # find the DB volume name
+sudo docker volume rm <project>_northwind_data     # delete it so init re-runs
+sudo docker compose up -d
+```
+**Verify:** `docker ps | grep -E 'northwind|analytics-ui'` (both Up; northwind `healthy`) and
+`curl -I http://localhost:3000` returns an HTTP status. Report the real result — don't claim the
+UI is up without the curl.
+
+### Airgapped install dies during "Extracting / Loading embedded Docker images" — DISK FULL
+**Symptom:** the airgapped binary runs, gets to "Verifying payload integrity" → "Extracting
+embedded Docker images", progresses partway (e.g. ~1.2 / 1.8 GiB), then the installer process
+disappears / the tmux session dies, and `df -h /` shows the root disk at **100%** (a few hundred
+MB free). No analytics containers come up.
+**Root cause:** not enough free disk. The airgapped path needs the binary (~1.8 GB) + the extracted
+image tar (~1.8 GB) + `docker load` layers (~4 GB) + stack volumes simultaneously — a 20 GB root
+disk fills up. This is a CAPACITY problem, not a bug in the binary.
+**Fix:**
+- Prevent it: check `df -h /` BEFORE downloading; require ≥ 25 GB free for Analytics airgapped
+  (≥ 12 GB for Portal). See SKILL.md "Step 2 → Disk preflight".
+- Recover on a too-small disk: free space (`sudo docker system prune -af`, delete the downloaded
+  `nqrust-*-airgapped-installer-*` binary after it has extracted, remove half-loaded images), then
+  either grow the VM's root disk and retry, or move to a VM with a ≥ 40 GB disk, or use the ONLINE
+  installer (lower peak local disk, streams images).
+- Don't "retry on the same full disk" — it fails the same way. Fix capacity first.
+
 ---
 
 ## When you can't determine the cause
