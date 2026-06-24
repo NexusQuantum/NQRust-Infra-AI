@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply the NQRust brand overlay onto the upstream claw-ui checkout (web-ui/).
+# Apply the NQRust brand overlay onto a fetched upstream claw-ui checkout.
 #
 # The overlay lives in web-ui-theme/ (owned by THIS repo). claw-ui is NOT pinned —
 # it follows upstream latest — so this script is WARN+CONTINUE: if upstream moved a
@@ -7,10 +7,10 @@
 # launch. The primary brand (branding.ts overwrite) almost always applies; only
 # secondary accents (the "nexus" literal, CSS) can degrade. Idempotent.
 #
-# Usage: scripts/apply-theme.sh [web-ui-dir]   (default: <repo>/web-ui)
+# Usage: scripts/apply-theme.sh [web-ui-dir]   (default: ~/.nqrust/web-ui)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WEBUI="${1:-$HERE/web-ui}"
+WEBUI="${1:-$HOME/.nqrust/web-ui}"
 THEME="$HERE/web-ui-theme"
 
 ok()   { printf '%s\n' "$*"; }
