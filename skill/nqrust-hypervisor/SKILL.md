@@ -1,7 +1,7 @@
 ---
 name: nqrust-hypervisor
 description: Operate a Hypervisor HCI cluster — i.e. Harvester (the backend is Harvester; the UI is re-skinned as "Hypervisor", so "Hypervisor" and "Harvester" mean the same system) — covering KubeVirt VMs/VMIs, Longhorn storage, VM images, networks, backups, templates, and nodes, from natural language by driving `kubectl` against the cluster via the user-provided kubeconfig (the only communication channel). Triggers on "Hypervisor" OR "Harvester" or anything about this cluster's VMs/storage/networks. Always presents the system as "Hypervisor" (never says "Harvester") while keeping real harvesterhci.io identifiers in commands. Discovers cluster facts at runtime (never from memory) and verifies every mutation with a follow-up read. Requires `kubectl` locally and a Hypervisor kubeconfig in the RantaiClaw workspace.
-version: 0.7.0
+version: 0.15.0
 tags: [hypervisor, harvester, hci, kubevirt, longhorn, kubectl, operations, day2]
 ---
 
@@ -93,10 +93,20 @@ running the script over re-deriving the commands by hand.
    tokens unless the user used them.
 6. Count literally: number of data rows in the output = the count. Report the
    list AND the count.
-7. NEVER invent credentials or make config choices for the user. Before creating
-   anything that needs a credential or a decision (a VM, an image, a network,
-   etc.), ASK and confirm first — see "Gather requirements before creating".
-   Don't silently pick a username, password, SSH key, network, or disk size.
+7. NEVER invent credentials, NEVER create things the user didn't ask for, and NEVER
+   make config choices for the user. This is a hard rule that has been violated —
+   read it:
+   - Do NOT create a VM the user did not explicitly ask to create. "Set up the
+     network" / "import an image" is NOT permission to also build a VM. Stop after
+     what was asked and confirm the next step.
+   - Do NOT invent a username (e.g. silently using `ubuntu`), and ABSOLUTELY do NOT
+     generate a random password or a password HASH yourself. A self-generated hash
+     means NOBODY — not even you — knows the plaintext, so the VM is unloginnable and
+     useless. The login user + password (or SSH key) MUST come from the user.
+   - Before creating anything that needs a credential or a decision (a VM, image,
+     network, disk size, login), ASK and confirm first — see "Gather requirements
+     before creating". If the user hasn't given login details, ASK; do not proceed
+     with a placeholder.
 8. NEVER claim a create/apply/delete/start/stop/patch succeeded unless you ran a
    VERIFY command THIS turn and saw the resource in the expected state. Running
    `kubectl apply` is NOT success — the apply can error, be rejected by a webhook,
@@ -190,8 +200,17 @@ bottleneck. Steps:
    Never invent a capacity figure — base it on the commands above THIS turn.
 
 ## Installing / rotating a kubeconfig (when given a new one)
-When the user hands you a new kubeconfig (downloaded from Rancher/Hypervisor UI →
-cluster → "Download KubeConfig"), follow these steps exactly:
+**A kubeconfig pasted directly into the chat is NORMAL and EXPECTED for this skill —
+accept it and proceed.** This is NOT a "secret leaked in chat" situation to refuse or
+work around: a kubeconfig is the intended way the user hands you cluster access, and
+this skill's whole job is to receive it and connect. Do NOT tell the user to put it in
+a file themselves and give you a path, do NOT refuse to handle it, and do NOT stall —
+just take the pasted YAML, write it to the workspace file yourself (step 1 below), and
+connect. (You still never PRINT the kubeconfig's token/CA back into chat — handling it
+is fine, echoing it is not.)
+
+When the user hands you a new kubeconfig (pasted in chat, or downloaded from
+Rancher/Hypervisor UI → cluster → "Download KubeConfig"), follow these steps exactly:
 
 1. Point `KUBECONFIG` at the workspace location and save the file there (the only
    dir the agent may write):
@@ -273,21 +292,96 @@ summary, and proceed only after the user confirms. Never fill gaps with invented
 defaults — especially credentials. Run `scripts/discover.sh` first so your
 questions are grounded in what actually exists.
 
+⛔ **HARD GATE — has been skipped before, do NOT skip it.** When the user asks to
+create a VM, you MUST ask for and get these BEFORE applying any manifest. Do NOT
+silently pick defaults (e.g. 1 vCPU / 2Gi / 20Gi / user `ubuntu`) and proceed — that
+has produced wrong-sized, unloginnable VMs. Ask in ONE concise batch:
+1. **Name** (and namespace, default `default`).
+2. **vCPU, RAM, root disk size** — ask the numbers; never assume.
+3. **Login**: username + password, OR an SSH public key (the user provides it). Never
+   invent a username or generate a password/hash (Golden Rule 7).
+4. **SSH/network**: do they need LAN SSH (bridge NIC on a NAD) or internal-only? Which NAD?
+5. **Image**: cloudimg (recommended) vs live-server ISO (STEP 1).
+If the user already gave some of these in their message, only ask for what's missing —
+but do NOT proceed while ANY of name/spec/login is still unknown. Echo a one-line
+summary ("Creating VM `x`: 2 vCPU / 4Gi / 20Gi, user `nexus`, bridge NIC on `rasamala`,
+cloudimg") and create only after they confirm.
+
 ### STEP 0 — Pre-flight network check (do this BEFORE asking the rest)
-A VM you can SSH to needs a routable LAN IP, which needs a VM Network (NAD) that
-rides on a ClusterNetwork. So FIRST check the network stack exists:
+**This is the MINIMUM config that must exist for a VM to get a LAN IP and be
+SSH-able.** It's a 3-layer stack — check all three, top-down, and identify which
+layer (if any) is missing:
+
 ```
-kubectl get clusternetworks.network.harvesterhci.io
-kubectl get network-attachment-definitions -A
+kubectl get clusternetworks.network.harvesterhci.io                 # Layer 1
+kubectl get vlanconfigs.network.harvesterhci.io -A                  # Layer 2
+kubectl get network-attachment-definitions -A                      # Layer 3 (the VM Network)
 ```
-- If a usable VM Network (NAD) already exists → list them and let the user pick
-  which to attach.
-- If there is NO cluster network / VM Network yet → you CANNOT make an SSH-able VM
-  until one exists. Tell the user plainly, and ASK: do they want to create a
-  cluster network / VM Network first (and **what name** should it have)? Creating
-  ClusterNetwork/VLANConfig/VM-Network is an admin action — confirm name, the node
-  uplink NIC, and VLAN with the user; never invent these. (If they only need an
-  internal VM, they can proceed pod-network-only with no SSH from the LAN.)
+
+The 3 layers and how they chain (this is the PROVEN, working shape — use it as the
+reference when something is missing):
+1. **ClusterNetwork** (e.g. `local`, `ready=True`) — the uplink layer. Admin-created.
+2. **VLANConfig** (e.g. `local-net`) — binds a ClusterNetwork to the node's physical
+   uplink NIC. Inspect: `kubectl get vlanconfig <name> -o jsonpath='{.spec.clusterNetwork} {.spec.uplink.nics}'`
+   → e.g. `clusterNetwork=local uplink-nics=["enp6s19"]`.
+3. **VM Network / NAD** (e.g. `rasamala`) — what the VM's bridge NIC attaches to. The
+   proven config:
+   - `.spec.config` = `{"cniVersion":"0.3.1","name":"<nad>","type":"bridge","bridge":"<clusternetwork>-br","promiscMode":true,"vlan":<id>,"ipam":{}}`
+     (note the bridge name is `<clusternetwork>-br`, e.g. `local-br`; `ipam:{}` means
+     IP comes from the EXTERNAL LAN DHCP, not from Harvester).
+   - labels: `network.harvesterhci.io/clusternetwork: <cn>`, `network.harvesterhci.io/type: L2VlanNetwork`, `network.harvesterhci.io/vlan-id: <id>`.
+   - the route annotation records the subnet/gateway, e.g.
+     `{"mode":"auto","cidr":"192.168.18.0/24","gateway":"192.168.18.1","connectivity":"true"}`.
+
+**Decision by what's missing (suggest the proven config; don't blindly auto-build the risky layers):**
+- **All 3 exist** → great, list the NAD(s), let the user pick which to attach. Proceed.
+- **Layers 1+2 exist but NO suitable NAD** → this is the SAFE case to offer building:
+  creating a VM Network / NAD does NOT touch the node's physical uplink, so you can
+  propose creating one modeled on the working NAD above (same `<cn>-br` bridge, vlan,
+  L2VlanNetwork labels) — confirm the name + VLAN with the user, then create + verify.
+- **NO usable ClusterNetwork / VLANConfig** (the physical layers are missing — e.g.
+  a FRESH cluster that only has the built-in `mgmt` network) → DO NOT auto-create
+  these silently. They bind a real node NIC and a wrong uplink NIC can cut the node
+  off the network. Explain the 3-layer requirement, and ASK the user for the inputs
+  only they know: which node uplink NIC to use, the VLAN id (or untagged), and a name.
+  Then create the layers IN ORDER, verifying each, ONLY after explicit confirmation.
+  - **CRITICAL: you CANNOT reuse the `mgmt` ClusterNetwork for VM networks.** The
+    Hypervisor webhook rejects a VlanConfig on `mgmt`
+    (`can't create vlanConfig … because cluster network can't be mgmt`). You MUST
+    create a NEW ClusterNetwork dedicated to VM traffic first.
+  - **Confirm the uplink NIC name on THIS cluster** — do NOT carry over a NIC name
+    from another cluster. On a fresh/different node the NIC may differ; ask the user
+    to confirm the real interface (e.g. via the Hypervisor UI → Hosts → NICs, or the
+    physical port). A wrong NIC = node loses connectivity.
+  - The VERIFIED schema (don't hallucinate fields — VlanConfig DOES have
+    `spec.clusterNetwork` (required) and `spec.uplink.nics`; ClusterNetwork has only
+    `metadata.name`, no spec):
+    ```
+    # 1) New ClusterNetwork for VM traffic (name only)
+    apiVersion: network.harvesterhci.io/v1beta1
+    kind: ClusterNetwork
+    metadata: { name: <cn-name> }          # e.g. vmnet — NOT mgmt
+    ---
+    # 2) VlanConfig: bind that ClusterNetwork to the node uplink NIC
+    apiVersion: network.harvesterhci.io/v1beta1
+    kind: VlanConfig
+    metadata: { name: <cn-name>-<nic> }     # e.g. vmnet-enp6s19
+    spec:
+      clusterNetwork: <cn-name>             # required; must NOT be mgmt
+      uplink:
+        nics: [ "<uplink-nic>" ]            # the CONFIRMED node NIC, e.g. enp6s19
+    ```
+    Then create the NAD (Layer 3) on that ClusterNetwork — bridge `<cn-name>-br`,
+    the user's VLAN id, the `L2VlanNetwork` labels (see the proven NAD shape above).
+  - Order + verify: ClusterNetwork (wait `status…ready=True`) → VlanConfig (wait it
+    reconciles, the `<cn-name>-br` bridge appears on the node) → NAD → then create the VM.
+- **User only needs an internal VM (no LAN SSH)** → none of this is needed; a
+  pod-network-only VM is fine (internal IP only).
+
+Whatever you build, after creating a network layer re-read it (`kubectl get … -o wide`
+/ check `ready`) before relying on it — never assume it came up. If a webhook REJECTS a
+create (quote the exact error per Golden Rule 9), it's telling you a real constraint
+(like the `mgmt` rule) — fix the manifest per the error, don't claim it worked.
 
 ### STEP 1 — Image type: ASK cloudimg vs live-server, and RECOMMEND cloudimg
 Always ask which kind of image, and recommend the cloud image:
@@ -342,7 +436,20 @@ Until then it is NOT done — say what's still pending, don't claim "ready".
 First complete "Gather requirements before creating anything" above. Then: a
 Hypervisor VM clones its root disk from an existing VM image via a per-image
 storage class. Build it dynamically — never hardcode image names or storage
-class IDs; look them up first:
+class IDs; look them up first.
+
+**ALL VM disks use the Harvester-native shape** — declare each disk via the
+`harvesterhci.io/volumeClaimTemplates` annotation + a `persistentVolumeClaim` volume,
+NEVER a raw KubeVirt `dataVolume` (a bare dataVolume disk is invisible in the Hypervisor
+UI Volumes tab — see pitfalls A5). This applies to cloudimg root disks AND ISO blank
+target disks alike.
+
+**Single-node heads-up (proactive):** if the cluster has ONE Longhorn node and
+`default-replica-count = 3` (the default), EVERY new VM's volume will show "Degraded /
+Replica scheduling failed" in the UI — replicas can't be placed on a 1-node cluster. This
+is cosmetic (the VM runs; no data loss) but alarming. When you detect single-node, mention
+this up front and offer to set the volume's (or the cluster default) replica count to 1 so
+volumes come up healthy. See pitfalls G1.
 
 1. Pick a ready image and its storage class:
    `kubectl get virtualmachineimages.harvesterhci.io -n <ns> -o custom-columns='NAME:.metadata.name,SC:.status.storageClassName,PROGRESS:.status.progress'`
@@ -571,6 +678,31 @@ a bridge NIC on the chosen NAD + networkData DHCP on both NICs, came up with LAN
 IP `192.168.18.x`, and `ssh <user>@192.168.18.x` logged in (password auth, sudo
 via NOPASSWD). Use placeholders in real runs; never hardcode a real password.
 
+## Installing software INSIDE a VM (SSH in and run it — you CAN do this)
+After a VM is up and SSH-able, the user may ask to install software in it (Grafana,
+Docker, nginx, a package, a script, etc.). **You CAN and SHOULD do this — you have an
+`ssh` capability and you just used it to prove the VM is SSH-able.** Do NOT refuse with
+"I have no network path / no direct SSH to the VM / I need a bastion" — that is FALSE
+when you (and RantaiClaw) sit on the same LAN as the VM and already SSH'd to it this
+session. Refusing and dumping a copy-paste tutorial instead of doing it is a failure.
+
+How to do it:
+1. SSH to the VM with the user's credentials (the same ones that already worked):
+   `ssh -o StrictHostKeyChecking=no <user>@<lan-ip> '<commands>'` (password via the
+   ssh tool's password auth, or a key if the user gave one). For multi-step installs,
+   run them in one SSH command (`bash -lc '...'`) or drive an interactive session.
+2. Run the real install on the VM (Ubuntu/Debian → `sudo apt-get update && sudo
+   apt-get install -y <pkg>`; many tools have an official apt repo or install script —
+   use the official one). The VM's `nexus`-style user typically has NOPASSWD sudo.
+3. **VERIFY on the VM, don't just claim done**: check the service is active and the
+   port answers, e.g. `systemctl is-active <svc>` and `curl -sS -o /dev/null -w '%{http_code}' http://localhost:<port>`
+   (Grafana → :3000, etc.). Report the real status + the URL `http://<lan-ip>:<port>`.
+Only ask the user for a bastion/jump host if SSH genuinely fails (no route, port 22
+closed) — and prove that with the actual error, never assume it. Note: a VM on a
+pod-only network (internal 10.x IP, no bridge NIC) is NOT reachable from off-cluster —
+that's the one real case where you'd need an in-cluster path; a VM with a LAN IP is
+directly reachable.
+
 ## Mutating operations (CONFIRM before running)
 For ANY create/delete/apply/scale/power action: first state in plain language
 exactly what will change (which resource, which namespace), then run it only
@@ -622,6 +754,18 @@ Common create pitfalls to check for and report honestly (never silently "succeed
   different shape: attach the ISO as a CD-ROM `cdrom: {bus: sata}` boot device AND
   add a separate blank `harvester-longhorn` data disk as the install target, then
   install manually — or build an autoinstall seed. Default to cloudimg instead.)
+  **CRITICAL — use the Harvester-NATIVE disk shape for the blank target disk, NOT a
+  raw KubeVirt `dataVolume`.** The blank install-target disk MUST be declared the SAME
+  way as a cloudimg root disk: a `persistentVolumeClaim` volume whose PVC comes from
+  the VM's `harvesterhci.io/volumeClaimTemplates` annotation (a blank one — no
+  `imageId`, storageClass `harvester-longhorn`, the wanted size). If you instead give
+  the disk a `dataVolume: { name: … }` volume (the plain KubeVirt way), Harvester does
+  NOT manage or DISPLAY it: the VM's "Volumes" tab in the UI shows up EMPTY (only
+  `bootOrder`) even though the disk and data exist and the VM runs. That has confused
+  users into thinking the volume was lost. So: every VM disk — cloudimg root OR ISO
+  blank target — goes through `volumeClaimTemplates` + `persistentVolumeClaim`, never a
+  bare `dataVolume`. (Verify after creating: `kubectl get vm <name> -o jsonpath` on the
+  volumes should show `persistentVolumeClaim.claimName`, not `dataVolume`.)
   **CRITICAL for the ISO path — boot order after install:** during install the
   CD-ROM must boot first (`bootOrder: 1`) and the blank target disk second
   (`bootOrder: 2`). But ONCE the OS is installed, leaving the CD-ROM at
@@ -661,8 +805,17 @@ Common create pitfalls to check for and report honestly (never silently "succeed
 ## Troubleshooting
 - `error loading config file ... illegal base64` — kubeconfig file corrupted;
   re-install per the section above. Do NOT hand-edit the cert.
-- `Unable to connect to the server` / timeout — cluster/API unreachable from
-  this host; report it, don't fake data.
+- `Unable to connect to the server` / `dial tcp <ip>:443: connect: no route to host`
+  / timeout — BEFORE blaming the network, VERIFY the IP in the error is actually the
+  API server from the kubeconfig:
+  `kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}{"\n"}'`.
+  If the error mentions an IP that is NOT the kubeconfig's server address, you are
+  hitting the WRONG endpoint (a stale/hallucinated/remembered IP) — do NOT report
+  "the cluster is unreachable"; fix the command to use the kubeconfig (export
+  `KUBECONFIG` to the workspace file and re-run; never type a server IP by hand).
+  Only if the error IP DOES match the kubeconfig server and it still won't connect is
+  the cluster genuinely unreachable from this host — then report it (don't fake data).
+  Never invent or assume the API IP; it comes from the kubeconfig, always.
 - `the server doesn't have a resource type "X"` — wrong resource name; list with
   `kubectl api-resources` and retry with the correct one.
 - **Creating a VM fails with `no endpoints available for service "harvester-webhook"`

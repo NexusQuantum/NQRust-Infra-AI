@@ -44,6 +44,23 @@ cluster's real state** — always re-read with `kubectl` (or `scripts/verify-vm.
 - Symptom: `<name>-disk-0` PVC stuck Pending; VM never schedules.
 - Fix: request disk ≥ the image's virtualSize. Check the image size first.
 
+### A5. VM "Volumes" tab is EMPTY in the Hypervisor UI (shows only `bootOrder`)
+- Symptom: in the UI a VM's Volumes panel has no disk card — just `bootOrder: 1` — so it
+  looks like "the volume is gone". The VM is Running and the data is fine; the disk and its
+  PVC exist (`kubectl get pvc` shows `<name>-disk-0` Bound). Often seen on ISO-install VMs or
+  after editing a VM's disks (e.g. ejecting a CD-ROM).
+- Root cause: the disk is declared as a raw KubeVirt **`dataVolume`** (PVC carries
+  `cdi.kubevirt.io/createdForDataVolume`) instead of the Harvester-native
+  `persistentVolumeClaim` backed by the `harvesterhci.io/volumeClaimTemplates` annotation.
+  Harvester's UI only renders volumeClaimTemplates-managed PVCs, so a bare dataVolume disk is
+  invisible there (still works at the KubeVirt level). NOT data loss.
+- Fix / prevent: always declare VM disks the Harvester-native way (volumeClaimTemplates +
+  `persistentVolumeClaim` volume), for BOTH cloudimg root disks and ISO blank target disks —
+  never a bare `dataVolume`. To repair an existing VM, recreate the disk reference as a
+  persistentVolumeClaim pointing at the same (already-Bound) PVC and add the matching
+  volumeClaimTemplates annotation (confirm with the user; it restarts the VM). Verify the
+  volume now shows in the UI / that `kubectl … volumes` reports `persistentVolumeClaim`.
+
 ## B. cloud-init (the biggest time sink this session)
 
 ### B1. cloud-init is FIRST-BOOT only → patch+restart does nothing
