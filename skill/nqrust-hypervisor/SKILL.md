@@ -1,7 +1,7 @@
 ---
 name: nqrust-hypervisor
 description: Operate a Hypervisor HCI cluster — i.e. Harvester (the backend is Harvester; the UI is re-skinned as "Hypervisor", so "Hypervisor" and "Harvester" mean the same system) — covering KubeVirt VMs/VMIs, Longhorn storage, VM images, networks, backups, templates, and nodes, from natural language by driving `kubectl` against the cluster via the user-provided kubeconfig (the only communication channel). Triggers on "Hypervisor" OR "Harvester" or anything about this cluster's VMs/storage/networks. Always presents the system as "Hypervisor" (never says "Harvester") while keeping real harvesterhci.io identifiers in commands. Discovers cluster facts at runtime (never from memory) and verifies every mutation with a follow-up read. Requires `kubectl` locally and a Hypervisor kubeconfig in the RantaiClaw workspace.
-version: 0.15.0
+version: 0.16.0
 tags: [hypervisor, harvester, hci, kubevirt, longhorn, kubectl, operations, day2]
 ---
 
@@ -163,6 +163,13 @@ After that, every command is just `kubectl <args>`. (RantaiClaw sets `RANTAICLAW
 for the active profile; if you run a non-default profile and the path is wrong, point
 `KUBECONFIG` at the right `.../profiles/<profile>/workspace/kubeconfig-hypervisor`.)
 
+**The shell tool may be POSIX `/bin/sh` (dash), NOT bash.** Bash-isms fail there — e.g.
+`set -euo pipefail` errors with `set: Illegal option -o pipefail`. So in inline commands,
+do NOT use `set -o pipefail`, `[[ ]]`, arrays, `<(...)`, etc. Either write portable
+POSIX sh, or wrap a bash snippet explicitly: `bash -c 'set -euo pipefail; …'`. The
+shipped `scripts/*.sh` already start with `#!/usr/bin/env bash`, so RUN them as
+`bash scripts/<name>.sh` (don't paste their contents into a `/bin/sh` command).
+
 - Do NOT add `--insecure-skip-tls-verify`. The kubeconfig's CA already verifies
   the server cert; the flag is unnecessary.
 - Do NOT edit, regenerate, or "fix" `certificate-authority-data`. It is valid.
@@ -208,6 +215,22 @@ a file themselves and give you a path, do NOT refuse to handle it, and do NOT st
 just take the pasted YAML, write it to the workspace file yourself (step 1 below), and
 connect. (You still never PRINT the kubeconfig's token/CA back into chat — handling it
 is fine, echoing it is not.)
+
+⛔ **TWO HARD RULES — violating these has corrupted cluster access:**
+1. **NEVER reconstruct a kubeconfig from MEMORY, and NEVER store kubeconfig content as a
+   memory fact.** The kubeconfig lives ONLY in the workspace file
+   (`kubeconfig-hypervisor`). The CA `certificate-authority-data` is a long single-line
+   base64 string; if it ever passes through memory/recall it gets line-wrapped/escaped
+   and becomes CORRUPT (`kubectl` then fails with `x509: invalid ECDSA parameters` /
+   `unable to load root certificates`). So: do not `memory_store` the kubeconfig, and do
+   not `file_write` a kubeconfig built from remembered text. Only write the file from
+   YAML the user provides verbatim THIS turn.
+2. **Do NOT overwrite a WORKING kubeconfig.** Before writing/replacing the workspace
+   kubeconfig, TEST the existing one first: `KUBECONFIG=<workspace path> kubectl get nodes`.
+   If it returns nodes, it WORKS — use it as-is, do NOT overwrite it (especially not with
+   a remembered copy). Only write a new file when the user gave fresh kubeconfig YAML this
+   turn AND (ideally) the existing one is missing/broken. If you just clobbered a good
+   file and `kubectl` now errors on the CA, restore the user's valid kubeconfig and retry.
 
 When the user hands you a new kubeconfig (pasted in chat, or downloaded from
 Rancher/Hypervisor UI → cluster → "Download KubeConfig"), follow these steps exactly:
