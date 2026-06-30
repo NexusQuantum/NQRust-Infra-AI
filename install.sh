@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install NQRust-Infra-AI into your local RantaiClaw — deploy the skills, stage the nqvm
-# CLI, and brand the optional web console.  Usage: ./install.sh [profile]   (default: "default")
+# Install NQRust-Infra-AI into your local RantaiClaw — deploy the skills and stage the nqvm
+# CLI.  Usage: ./install.sh [profile]   (default: "default")
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -85,17 +85,6 @@ fi
 if [ -d "$HOME/.local/bin" ]; then
   ln -sf "$HERE/bin/nqrust-install" "$HOME/.local/bin/nqrust-install"
   say "✓ wrapper linked → ~/.local/bin/nqrust-install"
-fi
-
-# 6. Brand the optional web console (claw-ui). Upstream is vendored as the `web-ui/` submodule;
-#    the NQRust brand lives in web-ui-theme/ and is layered on by scripts/apply-theme.sh.
-if [ -f "$HERE/.gitmodules" ] && grep -q '"web-ui"' "$HERE/.gitmodules" 2>/dev/null; then
-  git -C "$HERE" submodule update --init web-ui >/dev/null 2>&1 || true
-  if [ -d "$HERE/web-ui/src" ]; then
-    bash "$HERE/scripts/apply-theme.sh" "$HERE/web-ui" >/dev/null && say "✓ web console branded (NQRust)"
-  else
-    say "! web-ui submodule not checked out — run: git submodule update --init web-ui"
-  fi
 fi
 
 say ""

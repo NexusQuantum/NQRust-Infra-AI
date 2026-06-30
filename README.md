@@ -172,10 +172,10 @@ and tells you exactly what to do in the admin UI. Self-signed TLS on the Portal 
 ## Web console (recommended)
 
 **The easiest way to use the agent** — chat with it and watch it work, in your browser. This
-**NQRust-branded web console** vendors the upstream [claw-ui](https://github.com/RantAI-dev/claw-ui)
-as the `web-ui/` git submodule; the NQRust brand (light/orange, **NQ·Rust** wordmark) lives in
-`web-ui-theme/` and is layered on top by `scripts/apply-theme.sh` — so it survives upstream changing
-its own brand.
+**NQRust-branded web console** fetches the upstream [claw-ui](https://github.com/RantAI-dev/claw-ui)
+on demand (into `~/.nqrust/web-ui`) and layers the NQRust brand (light/orange, **NQ·Rust** wordmark)
+from `web-ui-theme/` on top at every launch via `scripts/apply-theme.sh` — so it survives upstream
+changing its own brand.
 (It's the **agent's** console — distinct from the MicroVM product's own Web UI served on a target
 host's `:3000`.)
 
@@ -185,18 +185,17 @@ host's `:3000`.)
 ./web-ui.sh stop   # stop console + gateway
 ```
 
-**Or step by step** — run `ui start` from the **repo root** (or pass an absolute `--dir`):
+**What it does under the hood** (all run for you by `web-ui.sh`, against `~/.nqrust/web-ui`):
 ```bash
-git submodule update --init web-ui      # fetch the console (first time)
-./install.sh                            # applies the NQRust brand onto web-ui/
-(cd web-ui && bun install)              # or: npm install
-rantaiclaw ui start --dir web-ui        # starts gateway + console → http://localhost:3939
+rantaiclaw ui install --dir ~/.nqrust/web-ui   # fetch upstream claw-ui + deps (first run)
+bash scripts/apply-theme.sh ~/.nqrust/web-ui   # layer the NQRust brand on top
+rantaiclaw ui start --dir ~/.nqrust/web-ui      # starts gateway + console → http://localhost:3939
 ```
 
 Notes:
 - `rantaiclaw ui start` brings up **both the gateway and the console** — no separate `rantaiclaw gateway` step.
-- **Don't** run `rantaiclaw ui install`, or `rantaiclaw ui start` *without* `--dir` — those use the plain upstream console at `~/.rantaiclaw/ui`, not your NQRust `web-ui/`.
-- `apply-theme.sh` is idempotent — re-run after `git submodule update` to re-apply the brand on a newer upstream. For the plain upstream look, set `NEXT_PUBLIC_BRAND=rantaiclaw`.
+- **Don't** run `rantaiclaw ui install` or `ui start` *without* `--dir` — those use the plain upstream console at `~/.rantaiclaw/ui`, not your NQRust one at `~/.nqrust/web-ui`. `web-ui.sh` always passes `--dir`.
+- `apply-theme.sh` is idempotent — `web-ui.sh` re-applies the brand on every launch (after pulling a newer upstream). For the plain upstream look, set `NEXT_PUBLIC_BRAND=rantaiclaw`.
 
 ## What's in here
 
@@ -206,10 +205,9 @@ skill/nqrust-microvm-operate/  # MicroVM day-2 ops playbook (nqvm CLI) + ensure-
 skill/nqrust-hypervisor/       # Hypervisor (HCI) ops playbook (kubectl reference + recipes)
 skill/nqrust-suite/            # Analytics + Identity Portal: install/Q&A/troubleshoot (SKILL.md, RUNBOOK.md, reference/, scripts/)
 tutorials/                     # per-product hands-on walkthroughs (microvm.md, hypervisor.md, suite.md)
-web-ui/                        # web console — git submodule of RantAI-dev/claw-ui (upstream)
-web-ui-theme/                  # NQRust brand overlay for the console
-scripts/apply-theme.sh         # layer the NQRust brand onto web-ui/ (internal helper)
-install.sh                     # deploy the skills + stage nqvm + brand the web console
+web-ui-theme/                  # NQRust brand overlay (fetched to ~/.nqrust/web-ui at launch)
+scripts/apply-theme.sh         # layer the NQRust brand onto the fetched console (internal helper)
+install.sh                     # deploy the skills + stage nqvm
 web-ui.sh                      # one-command launcher for the NQRust web console
 get.sh                         # online installer (downloads the prebuilt bundle)
 bin/nqrust-install             # thin convenience wrapper (MicroVM install)
