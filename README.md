@@ -52,27 +52,56 @@ More products will land over time — each adds a skill under `skill/` and a tut
 
 ## Install the agent
 
-**Fastest — prebuilt bundle (recommended).** Ships a static `rantaiclaw` (with the ssh+pty tools)
-+ all the skills + the `nqvm` CLI. You only add your LLM key. Linux x86_64:
+Two modes — pick your network situation. Both need a reachable **LLM** (cloud API by key, or a
+local/on-prem model); only the install/fetch differs.
+
+### Online mode (has internet)
+
+**Prebuilt bundle (recommended).** A static `rantaiclaw` (with the ssh+pty tools) + all skills +
+the `nqvm` CLI. Linux x86_64:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NexusQuantum/NQRust-Infra-AI/master/get.sh | bash
 rantaiclaw onboard      # set your LLM provider + key
-rantaiclaw chat
+rantaiclaw chat         # CLI agent
+nqrust-web              # web console → http://localhost:3939 (fetches claw-ui on first run)
+nqrust-update           # update everything later (binary + skills + web console)
 ```
 
-**From source** (other platforms, or you already run your own RantaiClaw):
+### Airgapped mode (no GitHub/npm/bun.sh access)
+
+See the **[airgapped installation guide](tutorials/airgapped.md)** for step-by-step instructions.
+
+For restricted hosts. **Nothing is fetched** at install or run — everything is pre-packaged (the
+LLM API still needs to be reachable, e.g. by key or a local model). Because there's no fetch,
+**you download the bundle first** — for both install *and* updates.
+
+1. On a machine **with** internet, download from
+   [Releases](https://github.com/NexusQuantum/NQRust-Infra-AI/releases/latest) (Linux x86_64):
+   `nqrust-airgapped-<version>-x86_64-linux.tar.gz`
+2. Transfer it to the airgapped host (USB/scp), then:
+   ```bash
+   tar xzf nqrust-airgapped-<version>-x86_64-linux.tar.gz
+   cd nqrust-airgapped-<version>-x86_64-linux
+   ./setup-airgapped.sh        # installs rantaiclaw + skills + nqvm + bun + prebuilt web console — no network
+   export OPENROUTER_API_KEY="sk-..."   # or point ~/.rantaiclaw/config.toml at your local model
+   rantaiclaw chat             # CLI agent
+   nqrust-web                  # web console → http://localhost:3939 (offline, uses the prebuilt console)
+   ```
+
+**Updating (airgapped)** — there's no fetch, so **updating means downloading again**: on a
+connected machine grab the newer `nqrust-airgapped-<version>` bundle, transfer it, and re-run
+`./setup-airgapped.sh`. (`nqrust-update` / `rantaiclaw update` are online-only.) You can also
+rebuild the bundle yourself on a connected **same-arch** host:
+`release/pack-airgapped.sh <rantaiclaw-binary> <tag>`.
+
+### From source (other platforms, or your own RantaiClaw)
 
 ```bash
 git clone https://github.com/NexusQuantum/NQRust-Infra-AI
 cd NQRust-Infra-AI
-./install.sh            # deploy the skills, verify the tools, stage nqvm, brand the web console
-```
-
-**Web console (recommended)** — the easiest way to drive the agent: a browser UI (chat + watch it
-work). It's a separate Next.js app (not in the bundle), so use the git clone:
-```bash
-./web-ui.sh             # → http://localhost:3939   (see Web console below)
+./install.sh            # deploy the skills, verify the tools, stage nqvm
+./web-ui.sh             # web console → http://localhost:3939 (see Web console below)
 ```
 
 > **Getting a RantaiClaw with the tools** — the `ssh`/`pty` tools are general RantaiClaw
