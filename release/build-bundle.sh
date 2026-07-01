@@ -45,6 +45,7 @@ rm -rf "$STAGE/skill/nqrust-microvm-operate/.nqrust-src"
 
 # web console: launcher + theme overlay (claw-ui itself is fetched on demand by nqrust-web)
 install -m755 "$REPO/web-ui.sh" "$STAGE/web-ui.sh"
+install -m755 "$REPO/nqrust-uninstall" "$STAGE/nqrust-uninstall"
 mkdir -p "$STAGE/scripts"
 install -m755 "$REPO/scripts/apply-theme.sh" "$STAGE/scripts/apply-theme.sh"
 cp -r "$REPO/web-ui-theme" "$STAGE/web-ui-theme"

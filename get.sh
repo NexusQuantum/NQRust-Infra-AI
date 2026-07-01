@@ -87,7 +87,7 @@ esac
 SK="$HOME/.rantaiclaw/profiles/$PROFILE/workspace/skills"
 for d in "$BDIR"/skill/*/; do
   s="$(basename "$d")"
-  mkdir -p "$SK/$s"
+  rm -rf "$SK/$s"; mkdir -p "$SK/$s"   # clean replace: don't leave files removed upstream
   cp -r "$d." "$SK/$s/"
   chmod +x "$SK/$s"/scripts/*.sh 2>/dev/null || true
 done
@@ -123,6 +123,10 @@ fi
 printf '✓ done\n'
 UPD
   chmod +x "$DEST/.nqrust-update.$$"; mv -f "$DEST/.nqrust-update.$$" "$DEST/nqrust-update"
+  if [ -f "$BDIR/nqrust-uninstall" ]; then
+    install -m755 "$BDIR/nqrust-uninstall" "$NQDIR/nqrust-uninstall"
+    ln -sf "$NQDIR/nqrust-uninstall" "$DEST/nqrust-uninstall"
+  fi
   say "✓ web console ready → run: nqrust-web"
 fi
 

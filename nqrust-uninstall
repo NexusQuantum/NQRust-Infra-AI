@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+# Remove the NQRust-Infra-AI extension from this host.
+#   nqrust-uninstall         # remove NQRust bits (skills, web console, commands) — keep rantaiclaw
+#   nqrust-uninstall --all   # ALSO remove the rantaiclaw binary + bundled bun
+set -eu
+DEST="${BINDIR:-$HOME/.local/bin}"
+PROFILE="${RANTAICLAW_PROFILE:-default}"
+SK="$HOME/.rantaiclaw/profiles/$PROFILE/workspace/skills"
+say() { printf '%s\n' "$*"; }
+
+# 1. NQRust skills
+for s in "$SK"/nqrust-*; do [ -e "$s" ] && rm -rf "$s" || true; done
+say "✓ removed NQRust skills"
+
+# 2. web console + staged files
+rm -rf "$HOME/.nqrust"
+say "✓ removed ~/.nqrust (web console + theme + launcher)"
+
+# 3. commands
+rm -f "$DEST/nqrust-web" "$DEST/nqrust-update"
+say "✓ removed nqrust-web, nqrust-update"
+
+# 4. optionally the rantaiclaw binary + bun
+if [ "${1:-}" = "--all" ]; then
+  rm -f "$DEST/rantaiclaw" "$DEST/bun"
+  say "✓ removed rantaiclaw binary + bun"
+  say "  (for profile data / config, run 'rantaiclaw uninstall' BEFORE this if the binary is already gone)"
+else
+  say "  kept rantaiclaw binary — remove it too with: nqrust-uninstall --all"
+fi
+
+# 5. self-remove the command (safe while running; the open inode stays valid)
+rm -f "$DEST/nqrust-uninstall"
+say "✓ done — NQRust extension removed"

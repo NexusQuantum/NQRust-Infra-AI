@@ -54,7 +54,7 @@ SK="$HOME/.rantaiclaw/profiles/$PROFILE/workspace/skills"
 N=0
 for d in "$HERE"/skill/*/; do
   s="$(basename "$d")"; N=$((N+1))
-  mkdir -p "$SK/$s"
+  rm -rf "$SK/$s"; mkdir -p "$SK/$s"   # clean replace: drop files removed upstream
   cp -r "$HERE/skill/$s/." "$SK/$s/"
   chmod +x "$SK/$s"/scripts/*.sh 2>/dev/null || true
 done
@@ -73,6 +73,10 @@ if [ -f "$HERE/web-ui.sh" ]; then
   [ -f "$HERE/VERSION" ] && cp "$HERE/VERSION" "$NQDIR/VERSION"
   chmod +x "$NQDIR/web-ui.sh" "$NQDIR/scripts/apply-theme.sh"
   ln -sf "$NQDIR/web-ui.sh" "$DEST/nqrust-web"
+  if [ -f "$HERE/nqrust-uninstall" ]; then
+    install -m755 "$HERE/nqrust-uninstall" "$NQDIR/nqrust-uninstall"
+    ln -sf "$NQDIR/nqrust-uninstall" "$DEST/nqrust-uninstall"
+  fi
   say "✓ web console staged → run: nqrust-web"
 fi
 

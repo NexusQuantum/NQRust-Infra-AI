@@ -47,7 +47,7 @@ SK="$HOME/.rantaiclaw/profiles/$PROFILE/workspace/skills"
 N=0
 for d in "$HERE"/skill/*/; do
   s="$(basename "$d")"; N=$((N+1))
-  mkdir -p "$SK/$s"; cp -r "$HERE/skill/$s/." "$SK/$s/"
+  rm -rf "$SK/$s"; mkdir -p "$SK/$s"; cp -r "$HERE/skill/$s/." "$SK/$s/"   # clean replace
   chmod +x "$SK/$s"/scripts/*.sh 2>/dev/null || true
 done
 say "✓ $N skills deployed → $SK"
@@ -60,6 +60,10 @@ rm -rf "$NQDIR/web-ui-theme"; cp -r "$HERE/web-ui-theme" "$NQDIR/web-ui-theme"
 [ -f "$HERE/VERSION" ] && cp "$HERE/VERSION" "$NQDIR/VERSION"
 chmod +x "$NQDIR/web-ui.sh" "$NQDIR/scripts/apply-theme.sh"
 ln -sf "$NQDIR/web-ui.sh" "$DEST/nqrust-web"
+if [ -f "$HERE/nqrust-uninstall" ]; then
+  install -m755 "$HERE/nqrust-uninstall" "$NQDIR/nqrust-uninstall"
+  ln -sf "$NQDIR/nqrust-uninstall" "$DEST/nqrust-uninstall"
+fi
 if [ -d "$HERE/web-ui/src" ] && [ -d "$HERE/web-ui/node_modules" ]; then
   rm -rf "$NQDIR/web-ui"; cp -r "$HERE/web-ui" "$NQDIR/web-ui"
   : > "$NQDIR/offline"                      # marker → nqrust-web runs offline (skips fetch)
