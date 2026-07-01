@@ -41,10 +41,11 @@ command -v rantaiclaw >/dev/null 2>&1 || { warn "rantaiclaw not on PATH — open
 mkdir -p "$HOME/.nqrust"; : >"$LOG"
 say "NQRust web console (rantaiclaw $(rantaiclaw --version 2>/dev/null | awk '{print $2}'))"
 
-# update notice (best-effort, 1 line)
-if command -v curl >/dev/null 2>&1; then
+# update notice (best-effort, 1 line) — skip when offline; hard timeout so a blocked/
+# hanging GitHub never stalls the launcher.
+if [ "$OFFLINE" != 1 ] && command -v curl >/dev/null 2>&1; then
   INST="$(grep -m1 '^bundle=' "$HERE/VERSION" 2>/dev/null | cut -d= -f2 || true)"
-  LATEST="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##' || true)"
+  LATEST="$(curl -fsSLI --connect-timeout 3 --max-time 5 -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null | sed 's#.*/tag/##' || true)"
   [ -n "$INST" ] && [ -n "$LATEST" ] && [ "$INST" != "$LATEST" ] && \
     [ "$(printf '%s\n%s\n' "$INST" "$LATEST" | sort -V | tail -1)" = "$LATEST" ] && \
     say "  ↑ $LATEST tersedia — jalankan: nqrust-update" || true
